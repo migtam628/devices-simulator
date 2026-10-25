@@ -1,8 +1,8 @@
-# Devices Simulator — Lulwa Virtual Printer v0.1
+# Devices Simulator — Lulwa Virtual Printer v0.2
 
-Prototype virtual-printer capture engine for testing Lulwa Swim fulfillment documents. Supports Brother Tray 1, Brother Tray 2, and Zebra 4x6 profiles. Converts incoming PDF, JPG or PNG documents into saved JPG files. Raw ZPL is **archived but not rendered**.
+Prototype operating-system IPP print queues and virtual-printer capture engine for testing Lulwa Swim fulfillment documents. Supports Brother Tray 1, Brother Tray 2, and Zebra 4x6 profiles. Converts incoming PDF, JPG or PNG documents into saved JPG files. Raw ZPL is **archived but not rendered**.
 
-> **Current state:** This is a working document-to-JPG capture engine and an experimental CUPS backend, **not** a production-ready cross-platform virtual printer installer. Windows OS printer installation, robust macOS/Linux system queue installation, ZPL rendering, desktop GUI, and PrintNode integration are pending. The project's test suite exercises engine behavior, not OS printer registration.
+> **Current state:** Local IPP printer endpoints and cross-platform system queue registration scripts are included. IPP protocol tests pass, but real Windows/macOS/Linux installation and print-dialog support are **unverified and experimental**. Not IPP Everywhere, Mopria, or AirPrint certified. Scanner device installation, PWG Raster, ZPL rendering, a GUI and PrintNode integration are not implemented.
 
 ## Quick start (Windows / macOS / Linux)
 
@@ -23,6 +23,21 @@ On Windows PowerShell, use `py -3 -m venv .venv`, then `.venv\Scripts\Activate.p
 
 Default output: `~/Documents/Lulwa Virtual Printer/<profile>/<title>-<job-id>/`. Each successful capture contains `page-001.jpg` (and subsequent pages), the original file, and `job.json`.
 
+## System printer registration (experimental)
+
+Start the simulator in one terminal:
+
+```bash
+lulwa-ipp --port 8631
+```
+
+Then in another terminal, while the service remains running:
+
+- **macOS/Linux with CUPS:** `bash install/install-macos-linux.sh`
+- **Windows 11 PowerShell:** `.\\install\\install-windows.ps1`
+
+The scripts attempt to add **Lulwa SIM Brother (2 Trays)** and **Lulwa SIM Zebra 4x6 Label** to the OS printer list. Whether installation actually succeeds depends on IPP client compatibility: this prototype does not yet fully support IPP Everywhere or PWG Raster. See [OS printer guide](docs/OS_PRINTERS.md) for setup, limitations and uninstall.
+
 ## Printer profiles
 
 | Profile | Purpose | Default DPI |
@@ -31,9 +46,9 @@ Default output: `~/Documents/Lulwa Virtual Printer/<profile>/<title>-<job-id>/`.
 | `brother-tray2` | Letter invoice / forms | 300 |
 | `zebra` | 4x6 label | 203 |
 
-These are **capture profiles** and do not automatically appear in an operating system's Print dialog. Image input retains its source dimensions; the profile name alone does not resize output. For PDF input the document page size and DPI determine JPG dimensions.
+These are **capture profiles** that may now be registered as local OS printer queues through the experimental IPP server. Image input retains its source dimensions; the profile name alone does not resize output. For PDF input the document page size and DPI determine JPG dimensions.
 
-## Experimental CUPS backend (Linux / macOS)
+## Legacy CUPS backend (Linux / macOS — deprecated experiment)
 
 `install/cups-backend` and `install/install-cups.sh` demonstrate a CUPS device backend and three separate queues. `lpadmin -m raw` is deprecated and unsupported on some CUPS/macOS releases. Do not use the installer on a production computer. CUPS must be able to invoke the Python interpreter with this package and its dependencies installed; the output folder must be writable by the CUPS service. These prerequisites are **not automatically configured**. This installer currently does not provide a complete secure, supported driverless IPP service.
 
@@ -48,10 +63,11 @@ These are **capture profiles** and do not automatically appear in an operating s
 
 ## Next milestones
 
-1. Install genuine OS-discoverable virtual queues on Windows, macOS, and Linux with documented uninstall.
+1. Validate OS-visible IPP printer installation on Windows/macOS/Linux; implement missing IPP capabilities and PWG Raster.
 2. Local PDF and ZPL rendering, accurate 4x6 page boundaries and DPI handling.
 3. Desktop UI for print history, previews, simulated printer states and error injection.
 4. PrintNode end-to-end compatibility and testing with Lulwa Swim admin.
+5. Native scanner support requires a separate eSCL/AirScan and Windows-compatible scanner implementation.
 
 ## Tests
 
