@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .engine import PROFILES, capture
+from .native_printers import get_registration, install_printer, uninstall_printer, service_ready, PORT
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 35 * 1024 * 1024
@@ -187,13 +188,21 @@ def make_handler(store: HubStore, token: str):
                 html = html.replace("__HUB_TOKEN__", token)
                 return self.send(200, html.encode("utf-8"), "text/html; charset=utf-8")
             if path == "/api/state":
+                registrations = {p: get_registration(p) for p in ("brother", "zebra")}
+                devices = store.list_devices()
+                for device in devices:
+                    status = registrations.get(device["preset"])
+                    if status:
+                        device["os_status"] = status["status"]
                 return self.send(200, {
-                    "devices": store.list_devices(), "jobs": store.list_jobs(),
+                    "devices": devices, "jobs": store.list_jobs(), "registrations": registrations,
+                    "ipp_service_ready": service_ready(),
                     "presets": PRESETS, "platform": platform.system(), "output_dir": str(store.output_dir),
-                    "service": "local", "os_install_supported": False,
+                    "service": "local", "os_install_supported": platform.system() in ("Darwin", "Linux", "Windows"),
                 })
             if path == "/api/healthz":
-                return self.send(200, {"status": "ok", "engine": "available", "os_registration": "not_verified"})
+                return self.send(200, {"status": "ok", "engine": "available",
+                                       "ipp_service_ready": service_ready()})
             if path.startswith("/api/artifacts/"):
                 parts = path.split("/")
                 if len(parts) != 5:
@@ -227,6 +236,16 @@ def make_handler(store: HubStore, token: str):
                 path = urlparse(self.path).path
                 if path == "/api/devices":
                     return self.send(201, {"device": store.create_device(payload)})
+                if path in ("/api/system/install", "/api/system/uninstall"):
+                    if payload.get("confirm") is not True:
+                        return self.send(400, {"error": "Explicit OS-change confirmation required"})
+                    requested = payload.get("preset")
+                    if requested not in ("brother", "zebra"):
+                        return self.send(400, {"error": "Only Brother and Zebra printer queues can be modified"})
+                    result = (install_printer(requested) if path.endswith("install")
+                              and not path.endswith("uninstall") else uninstall_printer(requested))
+                    return self.send(200 if result["success"] else 409, {"registration": result,
+                                "error": result.get("error", "")})
                 parts = path.strip("/").split("/")
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "test":
                     document = None
@@ -268,6 +287,29 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     return server
 
 
+
+def start_attached_ipp():
+    """Start loopback IPP service alongside hub; reuse already running simulator."""
+    from .ipp_server import start_server
+    try:
+        server = start_server(port=PORT)
+    except OSError as exc:
+        if service_ready():
+            LOG.info("Reusing existing local IPP service on port %s", PORT)
+            return None, None
+        raise RuntimeError(f"Port {PORT} is occupied; cannot run virtual printer IPP service") from exc
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.2}, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def stop_attached_ipp(server, thread):
+    if server is not None:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Devices Simulator local control hub")
     parser.add_argument("--port", type=int, default=8765)
@@ -276,16 +318,20 @@ def main():
     parser.add_argument("--state-dir", type=Path)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    with create_server(port=args.port, output_dir=args.output, state_dir=args.state_dir) as server:
-        url = f"http://127.0.0.1:{server.server_port}/"
-        print(f"Devices Simulator Hub: {url}", flush=True)
-        print("Local-only hub. Native OS printer installation is NOT yet implemented in this UI.", flush=True)
-        if not args.no_browser:
-            webbrowser.open(url)
-        try:
-            server.serve_forever(poll_interval=0.2)
-        except KeyboardInterrupt:
-            pass
+    ipp_server, ipp_thread = start_attached_ipp()
+    try:
+        with create_server(port=args.port, output_dir=args.output, state_dir=args.state_dir) as server:
+            url = f"http://127.0.0.1:{server.server_port}/"
+            print(f"Devices Simulator Hub: {url}", flush=True)
+            print(f"IPP virtual printer service: http://127.0.0.1:{PORT}/healthz", flush=True)
+            if not args.no_browser:
+                webbrowser.open(url)
+            try:
+                server.serve_forever(poll_interval=0.2)
+            except KeyboardInterrupt:
+                pass
+    finally:
+        stop_attached_ipp(ipp_server, ipp_thread)
 
 
 if __name__ == "__main__":

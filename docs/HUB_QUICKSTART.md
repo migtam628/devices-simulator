@@ -71,3 +71,21 @@ If native WebView2 runtime is unavailable, use `lulwa-hub` to open the local bro
 3. Device fault injection, retention, editable settings and live diagnostics.
 4. Package signed OS installers and autostart service.
 5. Scanner device protocol and optional Studio workflow engine.
+
+
+## v0.4 — Install into native Printers & Scanners
+
+Run `lulwa-hub` or `lulwa-desktop`. The hub automatically starts the local IPP simulator on port 8631, unless an existing compatible simulator is running. Open **System Integration** and click **Install in OS** on Brother or Zebra. The wizard also includes the same action at Step 5.
+
+The app attempts actual OS registration with CUPS (`lpadmin -m everywhere`) on macOS/Linux and Windows `Add-Printer -IppURL` on supported systems. It checks whether the system queue exists and points to our endpoint after installation. When the operating system rejects the operation (including administrator-permission problems or incompatible IPP attributes), the hub shows an error, not a false success. Windows endpoint identity may remain unverified even if a name is visible.
+
+For macOS permission failures, keep `lulwa-hub` running and use a second Terminal:
+
+```bash
+sudo lpadmin -p Lulwa_SIM_Brother -E -v ipp://127.0.0.1:8631/ipp/brother -m everywhere
+sudo lpadmin -p Lulwa_SIM_Zebra_4x6 -E -v ipp://127.0.0.1:8631/ipp/zebra -m everywhere
+lpstat -v Lulwa_SIM_Brother
+lpstat -v Lulwa_SIM_Zebra_4x6
+```
+
+**Driverless IPP compatibility is experimental:** macOS/Linux may refuse to generate an `everywhere` printer driver until all required IPP attributes and document formats are supported; an OS-registered printer still needs a real print-dialog test to confirm JPG capture. The app does not install an official Brother/Zebra driver, USB hardware, or any native scanner. The hub supports removing only OS queues whose endpoint exactly matches its own configured URI.
