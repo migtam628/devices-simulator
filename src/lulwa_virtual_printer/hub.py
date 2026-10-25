@@ -206,6 +206,16 @@ def make_handler(store: HubStore, token: str):
 
         def do_POST(self):
             if self.headers.get("X-Devices-Token") != token:
+                # Consume a bounded request body before replying so HTTP/1.1
+                # keep-alive cannot interpret leftover JSON as a new request.
+                try:
+                    rejected_size = int(self.headers.get("Content-Length", "-1"))
+                    if 0 <= rejected_size <= MAX_BODY:
+                        self.rfile.read(rejected_size)
+                    else:
+                        self.close_connection = True
+                except (ValueError, OverflowError):
+                    self.close_connection = True
                 return self.send(403, {"error": "Local access token required"})
             try:
                 size = int(self.headers.get("Content-Length", "-1"))
