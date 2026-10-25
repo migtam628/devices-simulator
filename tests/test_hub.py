@@ -74,7 +74,7 @@ def test_http_token_and_browser_page(tmp_path):
         state = json.loads(res.read())
         assert len(state["devices"]) == 1
         assert len(state["jobs"]) == 1
-        assert state["os_install_supported"] is False
+        assert state["os_install_supported"] is True  # Linux CI supports the experimental install adapter
         conn.close()
     finally:
         server.shutdown()
