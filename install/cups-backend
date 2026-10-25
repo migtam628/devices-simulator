@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""CUPS backend; URI lulwasim:/brother-tray1, lulwasim:/brother-tray2, lulwasim:/zebra."""
+import os
+import sys
+from pathlib import Path
+
+if len(sys.argv) == 1:
+    print('direct lulwasim:/brother-tray1 "Lulwa Brother Tray 1" "Lulwa virtual Brother tray 1"')
+    print('direct lulwasim:/brother-tray2 "Lulwa Brother Tray 2" "Lulwa virtual Brother tray 2"')
+    print('direct lulwasim:/zebra "Lulwa Zebra 4x6" "Lulwa virtual Zebra 4x6"')
+    sys.exit(0)
+
+from lulwa_virtual_printer.engine import capture
+
+profile = os.environ.get("DEVICE_URI", "").split("/")[-1]
+if profile not in {"brother-tray1", "brother-tray2", "zebra"}:
+    print("ERROR: Invalid Lulwa backend profile", file=sys.stderr)
+    sys.exit(1)
+if len(sys.argv) < 6:
+    print("ERROR: Invalid CUPS backend invocation", file=sys.stderr)
+    sys.exit(1)
+
+file_data = Path(sys.argv[6]).read_bytes() if len(sys.argv) > 6 else sys.stdin.buffer.read()
+output = os.environ.get("LULWA_PRINT_OUTPUT", "/var/spool/lulwa-virtual-printer")
+try:
+    result = capture(file_data, profile, output, sys.argv[3])
+    print(f'INFO: Captured Lulwa job {result["id"]}; status={result["status"]}', file=sys.stderr)
+    sys.exit(0 if result["status"] == "rendered" else 1)
+except Exception as exc:
+    print(f"ERROR: Lulwa capture failed: {exc}", file=sys.stderr)
+    sys.exit(1)
