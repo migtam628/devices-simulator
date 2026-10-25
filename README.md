@@ -9,17 +9,17 @@ Prototype virtual-printer capture engine for testing Lulwa Swim fulfillment docu
 Python 3.10+ is required:
 
 ```bash
-python -m venv .venv
-# macOS/Linux:
+# macOS / Linux
+python3 -m venv .venv
 source .venv/bin/activate
-# Windows PowerShell:
-# .venv\Scripts\Activate.ps1
-python -m pip install -e '.[test]'
+python3 -m pip install -e '.[test]'
 lulwa-print --profile brother-tray1 --title packing-slip sample.pdf
 lulwa-print --profile brother-tray2 --title invoice sample.pdf
 lulwa-print --profile zebra --title shipping-label label.pdf
-python -m pytest -q
+python3 -m pytest -q
 ```
+
+On Windows PowerShell, use `py -3 -m venv .venv`, then `.venv\Scripts\Activate.ps1` and `python -m pip install -e ".[test]"` (inside the activated virtual environment).
 
 Default output: `~/Documents/Lulwa Virtual Printer/<profile>/<title>-<job-id>/`. Each successful capture contains `page-001.jpg` (and subsequent pages), the original file, and `job.json`.
 
@@ -56,6 +56,6 @@ These are **capture profiles** and do not automatically appear in an operating s
 ## Tests
 
 ```bash
-python -m pip install -e '.[test]'
-pytest -q
+python3 -m pip install -e '.[test]'
+python3 -m pytest -q
 ```
