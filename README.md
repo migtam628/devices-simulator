@@ -1,8 +1,14 @@
-# Devices Simulator — Lulwa Virtual Printer v0.2
+# Devices Simulator — Local Virtual Device Hub (v0.3)
 
 Prototype operating-system IPP print queues and virtual-printer capture engine for testing Lulwa Swim fulfillment documents. Supports Brother Tray 1, Brother Tray 2, and Zebra 4x6 profiles. Converts incoming PDF, JPG or PNG documents into saved JPG files. Raw ZPL is **archived but not rendered**.
 
 > **Current state:** Local IPP printer endpoints and cross-platform system queue registration scripts are included. IPP protocol tests pass, but real Windows/macOS/Linux installation and print-dialog support are **unverified and experimental**. Not IPP Everywhere, Mopria, or AirPrint certified. Scanner device installation, PWG Raster, ZPL rendering, a GUI and PrintNode integration are not implemented.
+
+## New in v0.3 — Device Hub Pro
+
+See [Hub Quick Start](docs/HUB_QUICKSTART.md) for Windows, macOS and Linux setup, native-window option, wizard use and limitations.
+
+Launch the local browser hub after installation with `lulwa-hub`. Optional desktop shell: `lulwa-desktop` after installing `.[desktop]`.
 
 ## Quick start (Windows / macOS / Linux)
 
