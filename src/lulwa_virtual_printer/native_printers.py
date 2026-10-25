@@ -6,6 +6,7 @@ This module does not install scanner, USB, HID or vendor printer drivers.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import platform
 import re
 import subprocess
@@ -113,10 +114,31 @@ def install_printer(preset: str, system: str | None = None, run=run_command,
         # deprecated 'raw' queue or arbitrary PPD is silently installed.
         cmd = ["lpadmin", "-p", name, "-E", "-D", display, "-v", uri, "-m", "everywhere"]
         result = run(cmd)
+        installation_method = "ipp_everywhere"
         if result.returncode:
             msg = (result.stderr or result.stdout).strip()[:1200]
-            return {**previous, "success": False, "error": msg or "lpadmin failed",
-                    "manual_command": "sudo " + " ".join(subprocess.list2cmdline([word]) if " " in word else word for word in cmd)}
+            # Some CUPS releases refuse to create a driverless PPD from our
+            # partial IPP implementation. A legacy PDF pass-through PPD can
+            # register a real queue on releases that still support -P.
+            # Never mask permission failures or attempt an unrelated driver.
+            can_fallback = any(phrase in msg.lower() for phrase in (
+                "unable to create ppd", "does not support required ipp",
+                "required ipp attributes", "document formats",
+            ))
+            if can_fallback:
+                ppd = Path(__file__).with_name("ppd") / (f"{preset}.ppd")
+                if ppd.is_file():
+                    fallback = ["lpadmin", "-p", name, "-E", "-D", display,
+                                "-v", uri, "-P", str(ppd)]
+                    second = run(fallback)
+                    if second.returncode == 0:
+                        result = second
+                        installation_method = "legacy_pdf_ppd"
+                    else:
+                        msg += "; legacy PDF fallback failed: " + (second.stderr or second.stdout).strip()[:650]
+            if result.returncode:
+                return {**previous, "success": False, "error": msg or "lpadmin failed",
+                        "manual_command": "sudo lpadmin -p " + name + " -E -v " + uri + " -m everywhere"}
     elif system == "Windows":
         # Fixed code only, no input derived from profile names or custom strings.
         script = ("$ErrorActionPreference='Stop'; Add-Printer -Name '" + name
@@ -129,6 +151,7 @@ def install_printer(preset: str, system: str | None = None, run=run_command,
         return {**previous, "success": False, "error": "Unsupported operating system"}
     verified = get_registration(preset, system=system, run=run)
     return {**verified, "success": verified["status"] == "registered",
+            "method": installation_method if system in ("Darwin", "Linux") else "windows_ipp",
             "error": "" if verified["status"] == "registered" else "Printer registration attempted, but exact queue and endpoint could not be verified."}
 
 

@@ -75,3 +75,35 @@ def test_unknown_presets_cannot_install():
     import pytest
     with pytest.raises(ValueError):
         install_printer("scanner",system="Darwin",check_service=lambda:True)
+
+
+def test_cups_ppd_fallback_when_driverless_rejected():
+    uri=PRINTERS["brother"][2]
+    calls=[]
+    def run(cmd):
+        calls.append(cmd)
+        if cmd[0]=="lpstat":
+            if any(x[0]=="lpadmin" and "-P" in x for x in calls):
+                return result(cmd,out=f"device for Lulwa_SIM_Brother: {uri}\n")
+            return result(cmd,1,err="not installed")
+        if cmd[0]=="lpadmin" and "-m" in cmd:
+            return result(cmd,1,err="Unable to create PPD: Printer does not support required IPP attributes or document formats")
+        if cmd[0]=="lpadmin" and "-P" in cmd:
+            assert cmd[-1].endswith("brother.ppd")
+            return result(cmd)
+        raise AssertionError(cmd)
+    installed=install_printer("brother",system="Darwin",run=run,check_service=lambda:True)
+    assert installed["success"] and installed["method"]=="legacy_pdf_ppd"
+    assert any("-P" in x for x in calls)
+
+
+def test_cups_does_not_fallback_on_permission_denied():
+    calls=[]
+    def run(cmd):
+        calls.append(cmd)
+        if cmd[0]=="lpstat":return result(cmd,1,err="unknown")
+        if cmd[0]=="lpadmin":return result(cmd,1,err="Not authorized")
+        raise AssertionError(cmd)
+    installed=install_printer("zebra",system="Darwin",run=run,check_service=lambda:True)
+    assert not installed["success"]
+    assert not any("-P" in x for x in calls)

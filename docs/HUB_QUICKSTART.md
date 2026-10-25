@@ -89,3 +89,5 @@ lpstat -v Lulwa_SIM_Zebra_4x6
 ```
 
 **Driverless IPP compatibility is experimental:** macOS/Linux may refuse to generate an `everywhere` printer driver until all required IPP attributes and document formats are supported; an OS-registered printer still needs a real print-dialog test to confirm JPG capture. The app does not install an official Brother/Zebra driver, USB hardware, or any native scanner. The hub supports removing only OS queues whose endpoint exactly matches its own configured URI.
+
+If CUPS specifically rejects the driverless printer's required IPP attributes, the v0.4 installer also attempts a bundled **legacy PDF pass-through PPD** on macOS/Linux. This is a compatibility fallback only, is deprecated by CUPS, and is not guaranteed to work on current or future macOS versions. The UI still verifies the exact OS queue endpoint after either installation method, and a successful OS print-dialog job must be tested separately.

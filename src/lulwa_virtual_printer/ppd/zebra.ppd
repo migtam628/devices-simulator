@@ -1,0 +1,35 @@
+*PPD-Adobe: "4.3"
+*% Devices Simulator experimental CUPS compatibility label printer
+*FormatVersion: "4.3"
+*FileVersion: "1.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "LULWZEB.PPD"
+*Manufacturer: "Devices Simulator"
+*Product: "(Lulwa SIM Zebra)"
+*ModelName: "Lulwa SIM Zebra 4x6"
+*NickName: "Lulwa SIM Zebra 4x6 PDF Capture"
+*ShortNickName: "Lulwa SIM Zebra 4x6"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "5"
+*cupsFilter2: "application/pdf application/pdf 0 -"
+*cupsFilter2: "image/jpeg image/jpeg 0 -"
+*cupsFilter2: "image/png image/png 0 -"
+*OpenUI *PageSize/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: Custom4x6
+*PageSize Custom4x6/4 x 6 inch Label: "<</PageSize[288 432]>>setpagedevice"
+*CloseUI: *PageSize
+*OpenUI *PageRegion/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageRegion
+*DefaultPageRegion: Custom4x6
+*PageRegion Custom4x6/4 x 6 inch Label: "<</PageSize[288 432]>>setpagedevice"
+*CloseUI: *PageRegion
+*DefaultImageableArea: Custom4x6
+*ImageableArea Custom4x6: "0 0 288 432"
+*DefaultPaperDimension: Custom4x6
+*PaperDimension Custom4x6: "288 432"
