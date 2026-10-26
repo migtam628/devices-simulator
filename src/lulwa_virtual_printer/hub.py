@@ -23,6 +23,7 @@ from urllib.parse import unquote, urlparse
 from .engine import PROFILES, capture
 from .native_printers import get_registration, install_printer, uninstall_printer, service_ready, PORT
 from .hid_barcode import MacBarcodeHID
+from .os_print_test import verify_print_roundtrip
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 35 * 1024 * 1024
@@ -31,8 +32,8 @@ CATEGORIES = ("office_printer", "label_printer", "scanner", "barcode", "receipt"
 PRESETS = {
     "brother": {"category": "office_printer", "label": "Brother Dual Tray", "name": "Brother Office Printer", "dpi": 300, "media": "Letter · 8.5 × 11 in", "profiles": ["brother-tray1", "brother-tray2"], "capability": "experimental"},
     "zebra": {"category": "label_printer", "label": "Zebra 4×6 Thermal", "name": "Zebra 4×6 Label Printer", "dpi": 203, "media": "Label · 4 × 6 in", "profiles": ["zebra"], "capability": "experimental"},
-    "scanner": {"category": "scanner", "label": "Flatbed Scanner", "name": "Virtual Flatbed Scanner", "dpi": 300, "media": "Letter · 8.5 × 11 in", "profiles": [], "capability": "planned"},
-    "barcode": {"category": "barcode", "label": "HID Barcode Scanner", "name": "Lulwa SIM Barcode HID", "dpi": None, "media": "Virtual keyboard · macOS", "profiles": [], "capability": "experimental"},
+    "scanner": {"category": "scanner", "label": "Flatbed Scanner Fixture", "name": "Virtual Flatbed Scan Preview", "dpi": 300, "media": "Letter · 8.5 × 11 in", "profiles": ["scanner"], "capability": "preview_only"},
+    "barcode": {"category": "barcode", "label": "Barcode Input Simulator", "name": "Simulated Barcode Input", "dpi": None, "media": "Keyboard events · macOS", "profiles": [], "capability": "experimental"},
     "receipt": {"category": "receipt", "label": "Receipt Printer", "name": "Virtual Receipt Printer", "dpi": 203, "media": "80 mm roll", "profiles": [], "capability": "planned"},
     "serial": {"category": "serial", "label": "Serial / COM Device", "name": "Virtual Serial Device", "dpi": None, "media": "PTY / COM", "profiles": [], "capability": "planned"},
 }
@@ -89,7 +90,7 @@ class HubStore:
                 "id": str(uuid.uuid4()), "preset": preset, "category": config["category"],
                 "name": name, "media": config["media"], "dpi": config["dpi"],
                 "tray": data.get("tray") if data.get("tray") in ("tray-1", "tray-2") else "tray-1",
-                "output_format": "jpg", "delay_ms": 0,
+                "output_format": "jpg", "delay_ms": 0, "fault": "none",
                 "lifecycle": "draft", "os_status": "not_verified",
                 "last_test": None, "created_at": timestamp()
             }
@@ -106,6 +107,46 @@ class HubStore:
             state["devices"] = new
             self._write(state)
             return True
+
+
+    def configure_device(self, device_id: str, data: dict):
+        fault = data.get("fault", "none")
+        tray = data.get("tray", "tray-1")
+        if fault not in ("none", "offline", "paper_out", "jam", "paused"):
+            raise ValueError("Unknown simulated device fault")
+        if tray not in ("tray-1", "tray-2"):
+            raise ValueError("Unknown Brother paper tray")
+        with self.lock:
+            state = self._read()
+            for d in state["devices"]:
+                if d["id"] == device_id:
+                    if d["preset"] not in ("brother", "zebra"):
+                        raise ValueError("Fault injection only supports printer profiles")
+                    d["fault"] = fault
+                    if d["preset"] == "brother":
+                        d["tray"] = tray
+                    self._write(state)
+                    return d
+        raise LookupError("Device not found")
+
+    def _record_simulated_failure(self, profile: str, title: str, fault: str):
+        ident = uuid.uuid4().hex
+        directory = self.output_dir / profile / ("simulated-failure-" + ident)
+        directory.mkdir(parents=True, exist_ok=False)
+        job = {"id": ident, "title": title, "profile": profile,
+               "status": "failed", "error": f"Simulated {fault.replace('_', ' ')}",
+               "images": [], "format": "simulation", "created_at": timestamp()}
+        (directory / "job.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
+        return {**job, "directory": str(directory)}
+
+    def run_shipping_demo(self, brother_id: str, zebra_id: str):
+        a, b = self.get_device(brother_id), self.get_device(zebra_id)
+        if not a or not b or a["preset"] != "brother" or b["preset"] != "zebra":
+            raise ValueError("Studio requires saved Brother and Zebra device profiles")
+        jobs = [self.test_device(brother_id, title="Studio Packing Slip"),
+                self.test_device(zebra_id, title="Studio Shipping Label")]
+        return {"status": "completed" if all(x["status"] == "rendered" for x in jobs) else "failed",
+                "mode": "local_capture_demo", "jobs": jobs}
 
     def test_device(self, device_id: str, document: bytes | None = None, title: str = "Sample Test") -> dict:
         import fitz
@@ -128,13 +169,17 @@ class HubStore:
             pdf.close()
         if len(document) > MAX_FILE:
             raise ValueError("File exceeds 25 MB limit")
-        profile = "zebra" if device["preset"] == "zebra" else "brother-tray2" if device["tray"] == "tray-2" else "brother-tray1"
-        result = capture(document, profile, self.output_dir, title=title, dpi=device["dpi"])
+        profile = ("zebra" if device["preset"] == "zebra" else "scanner"
+                   if device["preset"] == "scanner" else
+                   "brother-tray2" if device["tray"] == "tray-2" else "brother-tray1")
+        fault = device.get("fault", "none")
+        result = (self._record_simulated_failure(profile, title, fault) if fault != "none"
+                  else capture(document, profile, self.output_dir, title=title, dpi=device["dpi"]))
         with self.lock:
             state = self._read()
             for d in state["devices"]:
                 if d["id"] == device_id:
-                    d["last_test"] = {"status": result["status"], "at": timestamp(), "job_id": result["id"], "scope": "api_only"}
+                    d["last_test"] = {"status": result["status"], "at": timestamp(), "job_id": result["id"], "scope": "in_app_fixture" if device["preset"] == "scanner" else "api_only"}
                     break
             self._write(state)
         return result
@@ -237,9 +282,18 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
                 path = urlparse(self.path).path
                 if path == "/api/devices":
                     return self.send(201, {"device": store.create_device(payload)})
+                if path == "/api/system/print-test":
+                    if payload.get("confirm") is not True:
+                        return self.send(400, {"error": "Confirm this OS print test first"})
+                    result = verify_print_roundtrip(str(payload.get("preset", "")), store.output_dir)
+                    return self.send(200, {"verification": result})
+                if path == "/api/studio/run":
+                    result = store.run_shipping_demo(str(payload.get("brother_id","")),
+                                                     str(payload.get("zebra_id","")))
+                    return self.send(200, {"studio": result})
                 if path.startswith("/api/hid/"):
                     if payload.get("confirm") is not True:
-                        return self.send(400, {"error": "Explicit virtual HID activation or scan confirmation required"})
+                        return self.send(400, {"error": "Confirm keyboard input simulation before starting or sending a scan"})
                     if path == "/api/hid/start":
                         return self.send(200, {"hid": hid.start()})
                     if path == "/api/hid/stop":
@@ -258,6 +312,8 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
                     return self.send(200 if result["success"] else 409, {"registration": result,
                                 "error": result.get("error", "")})
                 parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "settings":
+                    return self.send(200, {"device": store.configure_device(parts[2], payload)})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "test":
                     document = None
                     if "file_base64" in payload:
@@ -303,11 +359,11 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
 
 
 
-def start_attached_ipp():
+def start_attached_ipp(output=None):
     """Start loopback IPP service alongside hub; reuse already running simulator."""
     from .ipp_server import start_server
     try:
-        server = start_server(port=PORT)
+        server = start_server(port=PORT, output=output)
     except OSError as exc:
         if service_ready():
             LOG.info("Reusing existing local IPP service on port %s", PORT)
@@ -333,7 +389,7 @@ def main():
     parser.add_argument("--state-dir", type=Path)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    ipp_server, ipp_thread = start_attached_ipp()
+    ipp_server, ipp_thread = start_attached_ipp(output=args.output)
     try:
         with create_server(port=args.port, output_dir=args.output, state_dir=args.state_dir) as server:
             url = f"http://127.0.0.1:{server.server_port}/"

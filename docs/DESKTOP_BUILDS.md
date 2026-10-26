@@ -2,7 +2,11 @@
 
 GitHub Actions packages the Device Simulator Hub for **Windows**, **macOS (Apple Silicon and Intel)**, and **Linux x64**. Downloads are portable archives containing a frozen executable, Python runtime, required Python packages, UI files and printer definitions. You do **not** need to install Python.
 
-## Download the builds
+## Download the builds from Releases
+
+**Recommended:** [GitHub Releases](https://github.com/migtam628/devices-simulator/releases). Each successful versioned release includes the four archives and their checksums. Actions artifacts are a fallback, not the primary download location.
+
+## Build artifacts (alternative)
 1. Open [Build desktop executables](https://github.com/migtam628/devices-simulator/actions/workflows/build-desktop.yml).
 2. Select the most recent **successful** workflow run.
 3. At the bottom under **Artifacts**, download the file matching your computer.

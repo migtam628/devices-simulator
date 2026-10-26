@@ -1,18 +1,18 @@
-# Devices Simulator — Local Virtual Device Hub (v0.4)
+# Devices Simulator — v0.6.0 Device Hub Pro
 
-Prototype operating-system IPP print queues and virtual-printer capture engine for testing Lulwa Swim fulfillment documents. Supports Brother Tray 1, Brother Tray 2, and Zebra 4x6 profiles. Converts incoming PDF, JPG or PNG documents into saved JPG files. Raw ZPL is **archived but not rendered**.
+Prototype operating-system IPP print queues and virtual-printer capture engine for testing Lulwa Swim fulfillment documents. Supports Brother Tray 1, Brother Tray 2, and Zebra 4x6 profiles. Converts incoming PDF, JPG or PNG documents into saved JPG files. A limited ZPL-II subset (text, boxes and Code128) can be rendered; unsupported commands are archived with explicit errors.
 
 > **Current state:** Local IPP printer endpoints and cross-platform system queue registration scripts are included. IPP protocol tests pass, but real Windows/macOS/Linux installation and print-dialog support are **unverified and experimental**. Not IPP Everywhere, Mopria, or AirPrint certified. Scanner device installation, PWG Raster, ZPL rendering and PrintNode integration are not implemented. A local hub GUI exists, with experimental operating-system printer registration.
 
-## macOS virtual HID barcode scanner (experimental)
+## macOS barcode keyboard input (Accessibility, experimental)
 
-A native macOS virtual-HID keyboard scanner helper is now included in the macOS builds. Activate it in the Barcode Scanner wizard or System Integration and test a barcode in another app's input field. This is **not** a document scanner and does **not** appear in Printers & Scanners. [Instructions and limitations](docs/HID_BARCODE_MACOS.md).
+The earlier virtual-HID helper failed on some modern macOS versions. The v0.6 helper uses Quartz keyboard events with user-approved Accessibility permission. **No true HID/USB scanner is installed.** [Details](docs/RELEASE_V0_6.md).
 
-## Download desktop executables (GitHub Actions)
+## Download executables from GitHub Releases
 
 The project now builds portable **Windows EXE**, **macOS .app (Apple Silicon and Intel)**, and **Linux x64** executable archives. No Python installation is required on the end user's machine.
 
-**[Download OS builds from GitHub Actions](https://github.com/migtam628/devices-simulator/actions/workflows/build-desktop.yml)** · [Installation and build instructions](docs/DESKTOP_BUILDS.md)
+**[Download the latest GitHub release](https://github.com/migtam628/devices-simulator/releases)** · [v0.6 features and known gaps](docs/RELEASE_V0_6.md) · [Build instructions](docs/DESKTOP_BUILDS.md)
 
 **Note:** These are unsigned development builds. Linux opens a local browser UI. Native OS printer registration is still experimental; executable packaging alone does not install a guaranteed-working OS printer or scanner.
 
@@ -73,7 +73,7 @@ These are **capture profiles** that may now be registered as local OS printer qu
 ## Limitations and safety
 
 - PDF and raster images are rendered to JPG. PostScript is rejected until converted to PDF.
-- Raw Zebra ZPL is saved as `original.zpl` with `needs-renderer` status; no JPG is generated yet.
+- ZPL is locally rendered for supported commands. Unsupported ZPL is saved as `original.zpl` with `needs-renderer` status.
 - Jobs are limited to 25 MiB source data and 100 PDF pages.
 - Treat output as sensitive customer data: protect saved labels and packing slips with OS permissions and appropriate retention. Do not expose the backend to untrusted networks.
 - PrintNode does not integrate automatically with the capture CLI; genuine OS-installed printers are required to be recognized by PrintNode.

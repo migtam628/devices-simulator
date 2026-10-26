@@ -19,7 +19,7 @@ def main():
     except ImportError as exc:
         raise SystemExit("Desktop UI dependency missing. Install: python3 -m pip install -e '.[desktop]'") from exc
 
-    ipp_server, ipp_thread = start_attached_ipp()
+    ipp_server, ipp_thread = start_attached_ipp(output=args.output)
     try:
         server = create_server(port=0, state_dir=args.state_dir, output_dir=args.output)
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.2}, daemon=True)

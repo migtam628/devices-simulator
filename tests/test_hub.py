@@ -34,14 +34,13 @@ def test_test_capture_generates_real_jpg_and_history(tmp_path):
     assert s.get_device(brother["id"])["last_test"]["scope"] == "api_only"
 
 
-def test_planned_device_cannot_fake_a_print(tmp_path):
+def test_scanner_preview_is_api_only(tmp_path):
     s = HubStore(tmp_path / "cfg", tmp_path / "out")
     scanner = s.create_device({"preset": "scanner", "name": "Scanner"})
-    try:
-        s.test_device(scanner["id"])
-        assert False, "Unsupported scanner should fail"
-    except ValueError as exc:
-        assert "profile preview" in str(exc).lower()
+    result = s.test_device(scanner["id"])
+    assert result["status"] == "rendered"
+    assert s.get_device(scanner["id"])["last_test"]["scope"] == "in_app_fixture"
+    assert s.get_device(scanner["id"])["os_status"] == "not_verified"
 
 
 def test_http_token_and_browser_page(tmp_path):

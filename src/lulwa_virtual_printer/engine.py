@@ -13,6 +13,7 @@ PROFILES = {
     "brother-tray1": {"printer": "Brother", "tray": "Tray 1", "dpi": 300},
     "brother-tray2": {"printer": "Brother", "tray": "Tray 2", "dpi": 300},
     "zebra": {"printer": "Zebra", "tray": "4x6 roll", "dpi": 203},
+    "scanner": {"printer": "Scanner Fixture", "tray": "flatbed preview", "dpi": 300},
 }
 
 

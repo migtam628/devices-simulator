@@ -76,7 +76,7 @@ def main():
         binary.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["clang", "-O2", "-Wall", "-Wextra", "-std=c11",
                         "-o", str(binary), str(source),
-                        "-framework", "IOKit", "-framework", "CoreFoundation"],
+                        "-framework", "ApplicationServices", "-framework", "CoreFoundation"],
                        check=True)
         subprocess.run([str(binary), "--self-test"], check=True)
         cmd += ["--add-binary", f"{binary}{delimiter}lulwa_virtual_printer/bin"]

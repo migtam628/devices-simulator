@@ -77,6 +77,48 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  publish_release:
+    name: Publish cross-platform binaries to GitHub Releases
+    needs: package
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: DevicesSimulator-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify binaries and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          for stem in DevicesSimulator-Windows-x64 DevicesSimulator-macOS-x64 DevicesSimulator-macOS-arm64; do
+            test -s "release-assets/${stem}.zip"
+            (cd release-assets && sha256sum -c "${stem}.zip.sha256")
+          done
+          test -s release-assets/DevicesSimulator-Linux-x64.tar.gz
+          (cd release-assets && sha256sum -c DevicesSimulator-Linux-x64.tar.gz.sha256)
+      - name: Create versioned GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version = ' pyproject.toml | head -1 | cut -d '"' -f 2)
+          test -n "$VERSION"
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG exists; bump version before next publish"
+            exit 1
+          fi
+          files=(release-assets/*)
+          gh release create "$TAG" "${files[@]}" --target "$RELEASE_SHA" --title "Devices Simulator $TAG (experimental)" --prerelease --notes "Cross-platform portable executables. Experimental printing and barcode keyboard simulation; native scanner drivers are not included."
+          echo "Release: https://github.com/${GH_REPO}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
   manifest:
     name: Build summary
     if: always()

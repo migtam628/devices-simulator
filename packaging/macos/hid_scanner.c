@@ -1,148 +1,90 @@
-/* macOS virtual HID keyboard used as a barcode-scanner wedge.
- * Protocol on stdin: SCAN <A-Za-z0-9-._/> or QUIT.
- * Emits READY at successful device creation, OK/ERR per scan.
- * The device exists only while this process runs.
+/* macOS barcode input simulator using public Quartz keyboard events.
+ * This IS NOT a virtual HID device, OS scanner or USB keyboard.
+ * Protocol: input "SCAN <allowed ASCII>" or "QUIT". stdout READY / OK / ERR ...
+ * Requires Accessibility permission for the helper binary.
  */
-#define _DARWIN_C_SOURCE
-#include <CoreFoundation/CoreFoundation.h>
-#include <IOKit/IOKitLib.h>
-#include <dlfcn.h>
-#include <IOKit/hid/IOHIDKeys.h>
-#include <pthread.h>
-#include <stdint.h>
+#include <ApplicationServices/ApplicationServices.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-/* Standard 8-byte USB HID boot-keyboard descriptor; virtual, not a USB device. */
-static const uint8_t kKeyboardDescriptor[] = {
-    0x05,0x01, 0x09,0x06, 0xA1,0x01,
-    0x05,0x07, 0x19,0xE0, 0x29,0xE7, 0x15,0x00, 0x25,0x01,
-    0x75,0x01, 0x95,0x08, 0x81,0x02,
-    0x95,0x01, 0x75,0x08, 0x81,0x01,
-    0x95,0x05, 0x75,0x01, 0x05,0x08, 0x19,0x01, 0x29,0x05,
-    0x91,0x02, 0x95,0x01, 0x75,0x03, 0x91,0x01,
-    0x95,0x06, 0x75,0x08, 0x15,0x00, 0x25,0x65,
-    0x05,0x07, 0x19,0x00, 0x29,0x65, 0x81,0x00, 0xC0
-};
-/* The classic IOHIDUserDevice API is omitted from newer Xcode SDK headers.
- * Resolve the exported runtime functions instead of relying on removed headers.
- * Any unavailable symbol is a clean unsupported error rather than a linker crash.
- */
-typedef CFTypeRef SimHIDDeviceRef;
-typedef SimHIDDeviceRef (*HIDCreateFn)(CFAllocatorRef, CFDictionaryRef);
-typedef void (*HIDRunLoopFn)(SimHIDDeviceRef, CFRunLoopRef, CFStringRef);
-typedef IOReturn (*HIDReportFn)(SimHIDDeviceRef, const uint8_t *, CFIndex);
-static HIDCreateFn pCreate = NULL;
-static HIDRunLoopFn pSchedule = NULL;
-static HIDRunLoopFn pUnschedule = NULL;
-static HIDReportFn pHandle = NULL;
-static SimHIDDeviceRef gDevice = NULL;
-static CFRunLoopRef gLoop = NULL;
-
-static void number_property(CFMutableDictionaryRef props, CFStringRef key, int value) {
-    CFNumberRef n = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &value);
-    if (n) { CFDictionarySetValue(props, key, n); CFRelease(n); }
-}
-
-/* Translate ASCII barcode characters to standard US-layout HID keycodes. */
-static int key_for_char(char c, uint8_t *key, uint8_t *modifier) {
-    *modifier = 0;
-    if (c >= 'a' && c <= 'z') { *key = (uint8_t)(4 + c - 'a'); return 1; }
-    if (c >= 'A' && c <= 'Z') { *key = (uint8_t)(4 + c - 'A'); *modifier = 0x02; return 1; }
-    if (c >= '1' && c <= '9') { *key = (uint8_t)(30 + c - '1'); return 1; }
-    if (c == '0') { *key = 39; return 1; }
-    if (c == '-') { *key = 45; return 1; }
-    if (c == '_') { *key = 45; *modifier = 0x02; return 1; }
-    if (c == '.') { *key = 55; return 1; }
-    if (c == '/') { *key = 56; return 1; }
-    return 0;
-}
-
-static int send_key(uint8_t key, uint8_t modifier) {
-    uint8_t report[8] = {0};
-    report[0] = modifier;
-    report[2] = key;
-    IOReturn ret = pHandle(gDevice, report, sizeof(report));
-    usleep(12000);
-    memset(report, 0, sizeof(report));
-    IOReturn released = pHandle(gDevice, report, sizeof(report));
-    usleep(12000);
-    return ret == kIOReturnSuccess && released == kIOReturnSuccess;
-}
-
-static void *read_commands(void *unused) {
-    (void)unused;
-    char line[150];
-    while (fgets(line, sizeof(line), stdin)) {
-        size_t length = strlen(line);
-        if (length == 0) continue;
-        if (line[length-1] == '\n') line[--length] = 0;
-        if (strcmp(line, "QUIT") == 0) break;
-        if (strncmp(line, "SCAN ", 5) != 0 || length < 6 || length > 105) {
-            puts("ERR unsupported command"); fflush(stdout); continue;
-        }
-        int ok = 1;
-        for (const char *p = line + 5; *p; ++p) {
-            uint8_t key = 0, mod = 0;
-            if (!key_for_char(*p, &key, &mod)) { ok = 0; break; }
-            if (!send_key(key, mod)) { ok = 0; break; }
-        }
-        puts(ok ? "OK" : "ERR HID dispatch failed");
-        fflush(stdout);
+static bool valid_code(const char *code) {
+    size_t n = strlen(code);
+    if (n < 1 || n > 100) return false;
+    for (size_t i = 0; i < n; ++i) {
+        char c = code[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '.' || c == '-' ||
+              c == '_' || c == '/')) return false;
     }
-    if (gLoop) CFRunLoopStop(gLoop);
-    return NULL;
+    return true;
+}
+
+static bool post_character(UniChar c) {
+    CGEventRef down = CGEventCreateKeyboardEvent(NULL, 0, true);
+    CGEventRef up = CGEventCreateKeyboardEvent(NULL, 0, false);
+    if (!down || !up) {
+        if (down) CFRelease(down);
+        if (up) CFRelease(up);
+        return false;
+    }
+    CGEventKeyboardSetUnicodeString(down, 1, &c);
+    CGEventKeyboardSetUnicodeString(up, 1, &c);
+    CGEventPost(kCGHIDEventTap, down);
+    CGEventPost(kCGHIDEventTap, up);
+    CFRelease(down);
+    CFRelease(up);
+    usleep(22000);
+    return true;
 }
 
 int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--self-test") == 0) {
-        puts("PASS: native macOS barcode HID helper compiled");
+        puts("PASS: Quartz barcode keyboard helper compiled");
         return 0;
     }
-    CFMutableDictionaryRef props = CFDictionaryCreateMutable(
-        kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    CFDataRef descriptor = CFDataCreate(kCFAllocatorDefault, kKeyboardDescriptor, sizeof(kKeyboardDescriptor));
-    if (!props || !descriptor) {
-        fprintf(stderr,"ERR allocation failed\n"); return 1;
-    }
-    CFDictionarySetValue(props, CFSTR(kIOHIDReportDescriptorKey), descriptor);
-    CFDictionarySetValue(props, CFSTR(kIOHIDProductKey), CFSTR("Lulwa SIM Barcode HID"));
-    CFDictionarySetValue(props, CFSTR(kIOHIDManufacturerKey), CFSTR("Devices Simulator"));
-    CFDictionarySetValue(props, CFSTR(kIOHIDTransportKey), CFSTR("Virtual"));
-    number_property(props, CFSTR(kIOHIDVendorIDKey), 0xF00D); /* test-only virtual VID */
-    number_property(props, CFSTR(kIOHIDProductIDKey), 0xBACE);
-    pCreate = (HIDCreateFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceCreate");
-    pSchedule = (HIDRunLoopFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceScheduleWithRunLoop");
-    pUnschedule = (HIDRunLoopFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceUnscheduleFromRunLoop");
-    pHandle = (HIDReportFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceHandleReport");
-    if (!pCreate || !pSchedule || !pUnschedule || !pHandle) {
-        fprintf(stderr,"ERR virtual HID API unavailable on this macOS build\n");
-        CFRelease(descriptor); CFRelease(props);
-        return 4;
-    }
-    gDevice = pCreate(kCFAllocatorDefault, props);
-    CFRelease(descriptor);
-    CFRelease(props);
-    if (!gDevice) {
-        fprintf(stderr,"ERR IOHIDUserDeviceCreate failed; check macOS HID permissions/support\n");
-        return 2;
-    }
-    gLoop = CFRunLoopGetCurrent();
-    CFRetain(gLoop);
-    pSchedule(gDevice, gLoop, kCFRunLoopDefaultMode);
-    pthread_t worker;
-    if (pthread_create(&worker, NULL, read_commands, NULL) != 0) {
-        fprintf(stderr,"ERR scanner command reader failed\n");
-        CFRelease(gDevice); CFRelease(gLoop);
+    /* macOS may display a system prompt, but permission is not granted
+       immediately. Never report READY until Accessibility is actually trusted. */
+    const void *keys[] = { kAXTrustedCheckOptionPrompt };
+    const void *values[] = { kCFBooleanTrue };
+    CFDictionaryRef options = CFDictionaryCreate(
+        kCFAllocatorDefault, keys, values, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    Boolean allowed = AXIsProcessTrustedWithOptions(options);
+    if (options) CFRelease(options);
+    if (!allowed) {
+        puts("ERR ACCESSIBILITY_PERMISSION_REQUIRED");
+        fflush(stdout);
+        fprintf(stderr, "Open macOS System Settings > Privacy & Security > Accessibility, allow DevicesSimulator (or this helper), then relaunch.\n");
         return 3;
     }
-    puts("READY"); fflush(stdout);
-    CFRunLoopRun();
-    pthread_join(worker, NULL);
-    pUnschedule(gDevice, gLoop, kCFRunLoopDefaultMode);
-    CFRelease(gDevice);
-    CFRelease(gLoop);
+    puts("READY KEYBOARD_SIMULATION");
+    fflush(stdout);
+    char line[160];
+    while (fgets(line, sizeof(line), stdin)) {
+        size_t len = strlen(line);
+        if (len && line[len - 1] == '\n') line[--len] = '\0';
+        if (strcmp(line, "QUIT") == 0) break;
+        if (strncmp(line, "SCAN ", 5) != 0 || !valid_code(line + 5)) {
+            puts("ERR INVALID_BARCODE");
+            fflush(stdout);
+            continue;
+        }
+        if (!AXIsProcessTrusted()) {
+            puts("ERR ACCESSIBILITY_PERMISSION_LOST");
+            fflush(stdout);
+            continue;
+        }
+        bool success = true;
+        for (const char *p = line + 5; *p; ++p) {
+            if (!post_character((UniChar)(unsigned char)*p)) {
+                success = false; break;
+            }
+        }
+        puts(success ? "OK KEYBOARD_EVENTS_SENT" : "ERR KEYBOARD_EVENT_FAILED");
+        fflush(stdout);
+    }
     return 0;
 }

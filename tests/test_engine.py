@@ -37,8 +37,9 @@ def test_invalid_input(tmp_path):
 
 def test_zpl_preserved_and_not_false_success(tmp_path):
     result = capture(b"^XA^FO20,20^FDHi^FS^XZ", "zebra", tmp_path)
-    assert result["status"] == "needs-renderer"
+    assert result["status"] == "rendered"
     assert Path(result["directory"], "original.zpl").exists()
+    assert Path(result["directory"], "page-001.jpg").exists()
 
 
 def test_filename_sanitization():

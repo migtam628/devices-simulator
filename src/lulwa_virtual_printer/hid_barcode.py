@@ -1,36 +1,33 @@
-"""macOS virtual HID barcode-scanner controller.
+"""macOS barcode keyboard INPUT simulator, not a HID device driver.
 
-A HID barcode scanner behaves as a keyboard; it is NOT a flatbed scanner and
-is NOT shown in macOS Printers & Scanners. Device exists while helper runs.
+Quartz CGEvent keyboard input requires macOS Accessibility approval. This
+process never appears in Printers & Scanners or as virtual USB hardware.
 """
 from __future__ import annotations
-
 import platform
 import re
 import selectors
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
 
 
 def helper_binary() -> Path:
-    packaged = Path(__file__).resolve().parent / "bin" / "mac_hid_scanner"
-    if packaged.is_file():
-        return packaged
-    # Source checkout: packaging/macos/mac_hid_scanner built with clang.
+    bundled = Path(__file__).resolve().parent / "bin" / "mac_hid_scanner"
+    if bundled.is_file():
+        return bundled
     return Path(__file__).resolve().parents[2] / "packaging" / "macos" / "mac_hid_scanner"
 
 
 def validate_barcode(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9._/-]{1,100}", value, re.ASCII):
-        raise ValueError("Barcode must have 1–100 ASCII letters, digits, dot, dash, underscore or slash")
+        raise ValueError("Barcode must be 1–100 ASCII letters, digits, dots, dashes, underscores or slashes")
     return value
 
 
 class MacBarcodeHID:
-    """One local user-session virtual keyboard; no persistent OS driver."""
+    """Keeps the existing API name for compatibility; never claims HID registration."""
     def __init__(self, system=None, binary=None):
         self.system = system or platform.system()
         self.binary = Path(binary) if binary else helper_binary()
@@ -48,30 +45,38 @@ class MacBarcodeHID:
 
     def state(self):
         return {"supported": self.supported(), "active": self.active(),
-                "mode": "temporary_virtual_keyboard", "os_verified": False,
-                "pending": self._pending, "last_error": self.last_error}
+                "mode": "keyboard_event_simulation", "os_verified": False,
+                "pending": self._pending, "last_error": self.last_error,
+                "last_sent_at": self.last_sent_at}
+
+    def _read_reply(self, timeout=7):
+        if not self.process or not self.process.stdout:
+            return ""
+        selector = selectors.DefaultSelector()
+        try:
+            selector.register(self.process.stdout, selectors.EVENT_READ)
+            if not selector.select(timeout=timeout):
+                return ""
+            return self.process.stdout.readline().strip()
+        finally:
+            selector.close()
 
     def start(self):
         with self.lock:
-            if self.active():
-                return self.state()
+            if self.active(): return self.state()
             if not self.supported():
-                raise RuntimeError("macOS HID barcode helper is unavailable on this platform/build")
+                raise RuntimeError("macOS keyboard simulator helper is unavailable on this build")
             self.last_error = ""
+            self.process = None
             try:
-                self.process = subprocess.Popen(
-                    [str(self.binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, text=True, bufsize=1
-                )
-                selector = selectors.DefaultSelector()
-                try:
-                    selector.register(self.process.stdout, selectors.EVENT_READ)
-                    ready = selector.select(timeout=7)
-                    first = self.process.stdout.readline().strip() if ready else ""
-                finally:
-                    selector.close()
-                if first != "READY" or self.process.poll() is not None:
-                    raise RuntimeError("Virtual HID did not report READY; check macOS permissions and runtime support")
+                self.process = subprocess.Popen([str(self.binary)], stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+                line = self._read_reply()
+                if not line.startswith("READY") or self.process.poll() is not None:
+                    if "ACCESSIBILITY_PERMISSION_REQUIRED" in line:
+                        raise RuntimeError("macOS Accessibility permission required. Open System Settings > Privacy & Security > Accessibility, approve DevicesSimulator or the helper, then relaunch.")
+                    detail = line if line.startswith("ERR ") else "Helper did not start; check macOS support"
+                    raise RuntimeError(detail)
             except Exception as exc:
                 self.last_error = str(exc)
                 self.stop()
@@ -88,22 +93,21 @@ class MacBarcodeHID:
                     try:
                         proc.stdin.write("QUIT\n")
                         proc.stdin.flush()
-                        proc.wait(timeout=3)
+                        proc.wait(timeout=2)
                     except (OSError, subprocess.TimeoutExpired):
                         proc.kill()
-                        proc.wait(timeout=3)
+                        proc.wait(timeout=2)
                 for stream in (proc.stdin, proc.stdout, proc.stderr):
-                    if stream:
-                        stream.close()
+                    if stream: stream.close()
             return self.state()
 
-    def scan(self, text: str, delay: float = 3.0):
-        code = validate_barcode(text)
-        if not self.active():
-            raise RuntimeError("Activate the HID barcode scanner first")
+    def scan(self, value: str, delay: float = 3.0):
+        barcode = validate_barcode(value)
         if not 0 <= delay <= 10:
             raise ValueError("Delay must be 0–10 seconds")
         with self.lock:
+            if not self.active():
+                raise RuntimeError("Activate keyboard simulation mode first")
             if self._pending:
                 raise RuntimeError("A scan is already pending")
             self._pending = True
@@ -112,14 +116,18 @@ class MacBarcodeHID:
                 time.sleep(delay)
                 with self.lock:
                     if not self.active():
-                        raise RuntimeError("Virtual HID stopped before barcode scan")
-                    self.process.stdin.write("SCAN " + code + "\n")
+                        raise RuntimeError("Keyboard simulation stopped before scan")
+                    self.process.stdin.write("SCAN " + barcode + "\n")
                     self.process.stdin.flush()
-                    # Do not echo captured code into logs/history.
+                    reply = self._read_reply(timeout=10)
+                    if reply != "OK KEYBOARD_EVENTS_SENT":
+                        raise RuntimeError(reply if reply.startswith("ERR ") else "No confirmation from keyboard simulator")
                     self.last_sent_at = time.time()
+                    self.last_error = ""
             except Exception as exc:
                 self.last_error = str(exc)
             finally:
                 self._pending = False
-        threading.Thread(target=dispatch, daemon=True, name="hid-barcode-scan").start()
-        return {"queued": True, "delay_seconds": delay, "message": "Focus the target application input field before the scan fires."}
+        threading.Thread(target=dispatch, daemon=True, name="barcode-keyboard-input").start()
+        return {"queued": True, "delay_seconds": delay,
+                "message": "Switch focus to the target text field. This is keyboard simulation, not an HID device."}
