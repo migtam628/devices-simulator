@@ -4,6 +4,10 @@ Prototype operating-system IPP print queues and virtual-printer capture engine f
 
 > **Current state:** Local IPP printer endpoints and cross-platform system queue registration scripts are included. IPP protocol tests pass, but real Windows/macOS/Linux installation and print-dialog support are **unverified and experimental**. Not IPP Everywhere, Mopria, or AirPrint certified. Scanner device installation, PWG Raster, ZPL rendering and PrintNode integration are not implemented. A local hub GUI exists, with experimental operating-system printer registration.
 
+## macOS virtual HID barcode scanner (experimental)
+
+A native macOS virtual-HID keyboard scanner helper is now included in the macOS builds. Activate it in the Barcode Scanner wizard or System Integration and test a barcode in another app's input field. This is **not** a document scanner and does **not** appear in Printers & Scanners. [Instructions and limitations](docs/HID_BARCODE_MACOS.md).
+
 ## Download desktop executables (GitHub Actions)
 
 The project now builds portable **Windows EXE**, **macOS .app (Apple Silicon and Intel)**, and **Linux x64** executable archives. No Python installation is required on the end user's machine.

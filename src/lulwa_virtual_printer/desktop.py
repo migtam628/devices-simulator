@@ -29,6 +29,7 @@ def main():
             webview.create_window("Devices Simulator — Device Hub Pro", url, width=1440, height=900, min_size=(980, 680))
             webview.start()
         finally:
+            server.hub_hid.stop()
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)

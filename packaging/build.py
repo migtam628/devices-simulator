@@ -70,6 +70,16 @@ def main():
         "--hidden-import", "PIL.JpegImagePlugin",
         "--hidden-import", "PIL.PngImagePlugin",
     ]
+    if target_os == "macOS":
+        source = ROOT / "packaging" / "macos" / "hid_scanner.c"
+        binary = ROOT / "build" / "mac_hid_scanner"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["clang", "-O2", "-Wall", "-Wextra", "-std=c11",
+                        "-o", str(binary), str(source),
+                        "-framework", "IOKit", "-framework", "CoreFoundation"],
+                       check=True)
+        subprocess.run([str(binary), "--self-test"], check=True)
+        cmd += ["--add-binary", f"{binary}{delimiter}lulwa_virtual_printer/bin"]
     if target_os in ("Windows", "macOS"):
         cmd += ["--windowed", "--collect-all", "webview"]
     cmd.append(str(ROOT / "packaging" / "launcher.py"))

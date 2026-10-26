@@ -20,6 +20,13 @@ def self_test():
     assert (root / "ppd" / "zebra.ppd").is_file(), "Bundled Zebra PPD missing"
     if platform.system() in ("Windows", "Darwin"):
         assert importlib.util.find_spec("webview"), "Native webview backend missing"
+    if platform.system() == "Darwin":
+        from lulwa_virtual_printer.hid_barcode import helper_binary
+        helper = helper_binary()
+        assert helper.is_file(), "macOS virtual HID helper missing from .app"
+        result = __import__("subprocess").run([str(helper), "--self-test"],
+                  capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, f"macOS virtual HID helper self-test failed: {result.stderr}"
     with tempfile.TemporaryDirectory(prefix="devices-simulator-test-") as folder:
         root = Path(folder)
         server = create_server(port=0, state_dir=root / "state", output_dir=root / "output")

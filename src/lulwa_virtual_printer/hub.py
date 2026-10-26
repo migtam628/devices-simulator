@@ -22,6 +22,7 @@ from urllib.parse import unquote, urlparse
 
 from .engine import PROFILES, capture
 from .native_printers import get_registration, install_printer, uninstall_printer, service_ready, PORT
+from .hid_barcode import MacBarcodeHID
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 35 * 1024 * 1024
@@ -31,7 +32,7 @@ PRESETS = {
     "brother": {"category": "office_printer", "label": "Brother Dual Tray", "name": "Brother Office Printer", "dpi": 300, "media": "Letter · 8.5 × 11 in", "profiles": ["brother-tray1", "brother-tray2"], "capability": "experimental"},
     "zebra": {"category": "label_printer", "label": "Zebra 4×6 Thermal", "name": "Zebra 4×6 Label Printer", "dpi": 203, "media": "Label · 4 × 6 in", "profiles": ["zebra"], "capability": "experimental"},
     "scanner": {"category": "scanner", "label": "Flatbed Scanner", "name": "Virtual Flatbed Scanner", "dpi": 300, "media": "Letter · 8.5 × 11 in", "profiles": [], "capability": "planned"},
-    "barcode": {"category": "barcode", "label": "Barcode Scanner", "name": "Virtual Barcode Scanner", "dpi": None, "media": "HID input", "profiles": [], "capability": "planned"},
+    "barcode": {"category": "barcode", "label": "HID Barcode Scanner", "name": "Lulwa SIM Barcode HID", "dpi": None, "media": "Virtual keyboard · macOS", "profiles": [], "capability": "experimental"},
     "receipt": {"category": "receipt", "label": "Receipt Printer", "name": "Virtual Receipt Printer", "dpi": 203, "media": "80 mm roll", "profiles": [], "capability": "planned"},
     "serial": {"category": "serial", "label": "Serial / COM Device", "name": "Virtual Serial Device", "dpi": None, "media": "PTY / COM", "profiles": [], "capability": "planned"},
 }
@@ -162,7 +163,7 @@ class HubStore:
         return None
 
 
-def make_handler(store: HubStore, token: str):
+def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
     class Handler(BaseHTTPRequestHandler):
         server_version = "DevicesHub/0.3"
         protocol_version = "HTTP/1.1"
@@ -196,7 +197,7 @@ def make_handler(store: HubStore, token: str):
                         device["os_status"] = status["status"]
                 return self.send(200, {
                     "devices": devices, "jobs": store.list_jobs(), "registrations": registrations,
-                    "ipp_service_ready": service_ready(),
+                    "ipp_service_ready": service_ready(), "hid": hid.state(),
                     "presets": PRESETS, "platform": platform.system(), "output_dir": str(store.output_dir),
                     "service": "local", "os_install_supported": platform.system() in ("Darwin", "Linux", "Windows"),
                 })
@@ -236,6 +237,16 @@ def make_handler(store: HubStore, token: str):
                 path = urlparse(self.path).path
                 if path == "/api/devices":
                     return self.send(201, {"device": store.create_device(payload)})
+                if path.startswith("/api/hid/"):
+                    if payload.get("confirm") is not True:
+                        return self.send(400, {"error": "Explicit virtual HID activation or scan confirmation required"})
+                    if path == "/api/hid/start":
+                        return self.send(200, {"hid": hid.start()})
+                    if path == "/api/hid/stop":
+                        return self.send(200, {"hid": hid.stop()})
+                    if path == "/api/hid/scan":
+                        return self.send(200, {"scan": hid.scan(payload.get("barcode", ""), 3.0)})
+                    return self.send(404, {"error": "Unknown HID action"})
                 if path in ("/api/system/install", "/api/system/uninstall"):
                     if payload.get("confirm") is not True:
                         return self.send(400, {"error": "Explicit OS-change confirmation required"})
@@ -265,6 +276,8 @@ def make_handler(store: HubStore, token: str):
                 return self.send(404, {"error": "Not found"})
             except LookupError as exc:
                 return self.send(404, {"error": str(exc)})
+            except RuntimeError as exc:
+                return self.send(409, {"error": str(exc)})
             except (ValueError, TypeError, UnicodeError) as exc:
                 return self.send(400, {"error": str(exc)})
             except OSError:
@@ -281,7 +294,9 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     output_dir = output_dir or Path.home() / "Documents" / "Lulwa Virtual Printer"
     store = HubStore(Path(state_dir), Path(output_dir))
     token = secrets.token_urlsafe(32)
-    server = ThreadingHTTPServer((host, port), make_handler(store, token))
+    hid = MacBarcodeHID()
+    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid))
+    server.hub_hid = hid
     server.hub_store = store
     server.hub_token = token
     return server
@@ -330,6 +345,8 @@ def main():
                 server.serve_forever(poll_interval=0.2)
             except KeyboardInterrupt:
                 pass
+            finally:
+                server.hub_hid.stop()
     finally:
         stop_attached_ipp(ipp_server, ipp_thread)
 
