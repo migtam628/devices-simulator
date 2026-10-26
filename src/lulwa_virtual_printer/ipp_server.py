@@ -132,7 +132,7 @@ def create_handler(output: str | Path):
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
-        server_version = 'LulwaIPP/0.2-experimental'
+        server_version = 'DevicesSimulatorIPP/0.6.1-experimental'
 
         def log_message(self, fmt, *args):
             LOGGER.info('%s %s', self.client_address[0], fmt % args)
