@@ -21,5 +21,5 @@ def test_finds_own_jpg_and_never_claims_physical_output(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(args,0,b"request accepted",b"")
     result=verify_print_roundtrip("zebra",tmp_path,registration=lambda _:{"status":"registered"},runner=send,timeout=0.5)
     assert result["result"]=="os_end_to_end_verified"
-    assert result["scope"]=="os_print_dialog_path"
+    assert result["scope"]=="os_spooler_to_ipp_to_jpg"
     assert result["job_id"]=="job-test"
