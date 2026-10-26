@@ -1,95 +1,190 @@
-# Devices Simulator — v0.6.0 Device Hub Pro
+<div align="center">
 
-Prototype operating-system IPP print queues and virtual-printer capture engine for testing Lulwa Swim fulfillment documents. Supports Brother Tray 1, Brother Tray 2, and Zebra 4x6 profiles. Converts incoming PDF, JPG or PNG documents into saved JPG files. A limited ZPL-II subset (text, boxes and Code128) can be rendered; unsupported commands are archived with explicit errors.
+<img src="docs/assets/product-hero.svg" alt="Illustrated Devices Simulator dashboard with office printer, thermal label printer and captured output" width="100%">
 
-> **Current state:** Local IPP printer endpoints and cross-platform system queue registration scripts are included. IPP protocol tests pass, but real Windows/macOS/Linux installation and print-dialog support are **unverified and experimental**. Not IPP Everywhere, Mopria, or AirPrint certified. Scanner device installation, PWG Raster, ZPL rendering and PrintNode integration are not implemented. A local hub GUI exists, with experimental operating-system printer registration.
+# Devices Simulator
 
-## macOS barcode keyboard input (Accessibility, experimental)
+**A local-first device workflow lab for teams building software that prints, labels, and scans.**
 
-The earlier virtual-HID helper failed on some modern macOS versions. The v0.6 helper uses Quartz keyboard events with user-approved Accessibility permission. **No true HID/USB scanner is installed.** [Details](docs/RELEASE_V0_6.md).
+Test output, reproduce printer failures, and inspect captured JPGs without needing a full hardware lab for every test.
 
-## Download executables from GitHub Releases
+[**Download for Windows, macOS & Linux**](https://github.com/migtam628/devices-simulator/releases) · [Product page source](docs/index.html) · [Company evaluation](docs/COMPANY_EVALUATION.md) · [Support & feedback](https://github.com/migtam628/devices-simulator/issues)
 
-The project now builds portable **Windows EXE**, **macOS .app (Apple Silicon and Intel)**, and **Linux x64** executable archives. No Python installation is required on the end user's machine.
+![Desktop builds](https://github.com/migtam628/devices-simulator/actions/workflows/build-desktop.yml/badge.svg)
+![Early access](https://img.shields.io/badge/status-early%20access-167789)
+![Platform](https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-desktop-18394f)
 
-**[Download the latest GitHub release](https://github.com/migtam628/devices-simulator/releases)** · [v0.6 features and known gaps](docs/RELEASE_V0_6.md) · [Build instructions](docs/DESKTOP_BUILDS.md)
+<sub>This hero is an illustration, not a live application screenshot or proof of native OS device installation.</sub>
 
-**Note:** These are unsigned development builds. Linux opens a local browser UI. Native OS printer registration is still experimental; executable packaging alone does not install a guaranteed-working OS printer or scanner.
+</div>
 
-## New in v0.4 — Native printer installation
+---
 
-See [Hub Quick Start](docs/HUB_QUICKSTART.md) for Windows, macOS and Linux setup, native-window option, wizard use and limitations.
+## Meet your hardware-independent testing workspace
 
-Launch the local browser hub after installation with `lulwa-hub`. Optional desktop shell: `lulwa-desktop` after installing `.[desktop]`.
+Software teams building commerce, shipping, POS and internal operations systems face an awkward dependency: testing device workflows usually means maintaining real printers and scanners everywhere.
 
-## Quick start (Windows / macOS / Linux)
+**Devices Simulator** helps developers, QA teams, and solution engineers create repeatable *local* testing scenarios for office printing, shipping labels, scanner fixtures, and barcode input. It makes generated output visible and simulated failures reproducible.
 
-Python 3.10+ is required:
+<div align="center"><img src="docs/assets/workflow.svg" alt="Illustrated workflow: input document, device simulation, JPG capture, visual QA review" width="100%"></div>
 
-```bash
-# macOS / Linux
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -e '.[test]'
-lulwa-print --profile brother-tray1 --title packing-slip sample.pdf
-lulwa-print --profile brother-tray2 --title invoice sample.pdf
-lulwa-print --profile zebra --title shipping-label label.pdf
-python3 -m pytest -q
-```
+> **Early-access software:** The simulator accelerates testing. It does **not** prove physical printing, shipping fulfillment, native scanner installation, or certification by a hardware vendor.
 
-On Windows PowerShell, use `py -3 -m venv .venv`, then `.venv\Scripts\Activate.ps1` and `python -m pip install -e ".[test]"` (inside the activated virtual environment).
+### Feature overview
 
-Default output: `~/Documents/Lulwa Virtual Printer/<profile>/<title>-<job-id>/`. Each successful capture contains `page-001.jpg` (and subsequent pages), the original file, and `job.json`.
+| Capability | Current support | Detail |
+|---|---|---|
+| Office printer simulation | **In-app + experimental OS queues** | Brother-style profiles, Letter media, two-tray settings |
+| 4 × 6 thermal label simulation | **In-app + experimental OS queues** | Zebra-style label captures and partial ZPL II |
+| Local document capture | **Available** | PDF, JPG, PNG and supported ZPL to JPG files |
+| Printer fault testing | **Available** | Normal, offline, paper-out, jam and paused |
+| Jobs, Gallery and Diagnostics | **Available** | Source documents, output files, metadata and trace information |
+| CUPS end-to-end verification | **Experimental — macOS/Linux** | Confirm OS spooler → local IPP → JPG, not just a queued job |
+| Flatbed scanner preview | **In-app fixture only** | Not an installed OS scanner |
+| macOS barcode entry | **Experimental keyboard simulation** | Accessibility-based input, not a true HID or USB device |
+| Studio shipping-station demo | **Available demo** | Capture sample Brother packing slip + Zebra label |
+| WIA/eSCL scanner, true HID, ESC/POS, PrintNode certification | **Not implemented / unverified** | Tracked as future work |
 
-## System printer registration (experimental)
+<div align="center"><img src="docs/assets/device-preview.svg" alt="Illustration showing simulated Brother-style dual trays and a Zebra-style 4 × 6 label" width="94%"></div>
 
-Start the simulator in one terminal:
+## Who it's for
 
-```bash
-lulwa-ipp --port 8631
-```
+**QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
 
-Then in another terminal, while the service remains running:
+**Shipping & fulfillment software:** Preview 4 × 6 labels, packing slips and internal paperwork before testing the physical printer.
 
-- **macOS/Linux with CUPS:** `bash install/install-macos-linux.sh`
-- **Windows 11 PowerShell:** `.\\install\\install-windows.ps1`
+**Retail, POS and kiosk vendors:** Exercise queue selection and document flows before store deployment.
 
-The scripts attempt to add **Lulwa SIM Brother (2 Trays)** and **Lulwa SIM Zebra 4x6 Label** to the OS printer list. Whether installation actually succeeds depends on IPP client compatibility: this prototype does not yet fully support IPP Everywhere or PWG Raster. See [OS printer guide](docs/OS_PRINTERS.md) for setup, limitations and uninstall.
+**Solution engineers and demo teams:** Demonstrate realistic workflows without carrying a whole set of devices to every meeting.
 
-## Printer profiles
+For pilots, deployment readiness, support boundaries and commercial-use questions, read the **[Company evaluation guide](docs/COMPANY_EVALUATION.md)**.
 
-| Profile | Purpose | Default DPI |
-| --- | --- | --- |
-| `brother-tray1` | Letter packing slip | 300 |
-| `brother-tray2` | Letter invoice / forms | 300 |
-| `zebra` | 4x6 label | 203 |
+## Download the app
 
-These are **capture profiles** that may now be registered as local OS printer queues through the experimental IPP server. Image input retains its source dimensions; the profile name alone does not resize output. For PDF input the document page size and DPI determine JPG dimensions.
+[**Browse published releases**](https://github.com/migtam628/devices-simulator/releases)
 
-## Legacy CUPS backend (Linux / macOS — deprecated experiment)
+| Platform | Package | Important requirement |
+|---|---|---|
+| Windows x64 | Portable ZIP with <code>DevicesSimulator.exe</code> | Keep its bundled files; WebView2 may be required |
+| macOS Apple Silicon | ZIP with <code>DevicesSimulator.app</code> | Unsigned early-access build |
+| macOS Intel | ZIP with <code>DevicesSimulator.app</code> | Unsigned early-access build |
+| Linux x64 | TAR.GZ with <code>DevicesSimulator</code> | Opens the hub in your system browser |
 
-`install/cups-backend` and `install/install-cups.sh` demonstrate a CUPS device backend and three separate queues. `lpadmin -m raw` is deprecated and unsupported on some CUPS/macOS releases. Do not use the installer on a production computer. CUPS must be able to invoke the Python interpreter with this package and its dependencies installed; the output folder must be writable by the CUPS service. These prerequisites are **not automatically configured**. This installer currently does not provide a complete secure, supported driverless IPP service.
+Python is bundled with the portable executables. Packages are development builds, **not signed or notarized installers**. Read [desktop packaging notes](docs/DESKTOP_BUILDS.md) for checksums and platform requirements.
 
-## Limitations and safety
+### First run
 
-- PDF and raster images are rendered to JPG. PostScript is rejected until converted to PDF.
-- ZPL is locally rendered for supported commands. Unsupported ZPL is saved as `original.zpl` with `needs-renderer` status.
-- Jobs are limited to 25 MiB source data and 100 PDF pages.
-- Treat output as sensitive customer data: protect saved labels and packing slips with OS permissions and appropriate retention. Do not expose the backend to untrusted networks.
-- PrintNode does not integrate automatically with the capture CLI; genuine OS-installed printers are required to be recognized by PrintNode.
-- Rendering/capture success **must not** mark a shipment fulfilled.
+1. Open Devices Simulator and select **Create Device**.
+2. Choose **Brother Dual Tray** or **Zebra 4 × 6**, configure the profile, and save it.
+3. Choose **Generate Sample** or import a document.
+4. Open **Output Gallery** to inspect your real local JPG files.
+5. Use **System Integration** only when you want to test experimental native printer queues.
 
-## Next milestones
+By default, capture output is stored under the user's Documents folder, in a profile-named directory. A captured job keeps the original input, one or more JPG pages and a <code>job.json</code> record.
 
-1. Validate OS-visible IPP printer installation on Windows/macOS/Linux; implement missing IPP capabilities and PWG Raster.
-2. Local PDF and ZPL rendering, accurate 4x6 page boundaries and DPI handling.
-3. Desktop UI for print history, previews, simulated printer states and error injection.
-4. PrintNode end-to-end compatibility and testing with Lulwa Swim admin.
-5. Native scanner support requires a separate eSCL/AirScan and Windows-compatible scanner implementation.
+### Where your data goes
 
-## Tests
+Core capture runs **locally** and does not require a cloud account. Your labels and documents can still contain sensitive order information. Control local filesystem permissions, storage location and manual cleanup; there is not yet an enterprise retention-management guarantee.
 
-```bash
-python3 -m pip install -e '.[test]'
-python3 -m pytest -q
-```
+## What “installed” means
+
+There are three separate milestones:
+
+1. **Profile created:** the simulator knows what to emulate.
+2. **OS printer queue registered:** Windows/macOS/Linux recognizes a local IPP queue, where supported.
+3. **OS job captured:** a print job reaches the simulator and produces a verifiable JPG.
+
+A successful result at milestone 2 **does not guarantee** milestone 3. Printer drivers, supported formats, queue status and operating-system behavior still matter.
+
+### Fixing “CUPS accepted the job, but no JPG arrived”
+
+The **v0.6.1 print-path update** addresses a protocol gap: the server now handles both a single IPP Print-Job and the two-stage **Create-Job → Send-Document** sequence used by some CUPS clients. It also reports IPP activity and distinguishes a captured job from a job that was merely accepted by the OS spooler.
+
+First, download the newest release, **quit the previous simulator completely**, and restart the app. In **System Integration**, check that the simulated printer queue is registered, then run **OS Print → JPG verification**.
+
+On macOS/Linux, use these diagnostics in Terminal:
+
+    # Verify OS queue and local simulator
+    lpstat -p
+    lpstat -v
+    curl http://127.0.0.1:8631/healthz
+
+    # See IPP operations, format and capture status (not document contents)
+    curl http://127.0.0.1:8631/diagnostics
+
+    # Check whether the spooler is holding a Brother test job
+    lpstat -p Lulwa_SIM_Brother -l
+    lpstat -o Lulwa_SIM_Brother
+
+If **no Print-Job or Send-Document request** appears in diagnostics, investigate CUPS queue delivery and document-format conversion. If an IPP request arrives but capture fails, inspect its status and error. Supported formats and conversions vary by OS.
+
+> GitHub's automated tests check the IPP two-stage submission and local JPG pipeline. We cannot certify your particular Mac or driver configuration without testing that host. See [OS printer setup](docs/OS_PRINTERS.md).
+
+## Simulated scanning and barcode entry
+
+**Flatbed scan fixture:** Imports or generates sample images within the app. It does *not* install a scanner into macOS Printers & Scanners or Windows Devices & Printers.
+
+**Barcode input simulator:** On macOS, the app can send barcode characters via Quartz keyboard events after explicit approval. It needs Accessibility permission and is **not** a permanent HID/USB device. Try it only with an empty, nonsensitive document or test form in focus.
+
+## From source
+
+Requires Git and Python 3.10+.
+
+macOS and Linux:
+
+    git clone https://github.com/migtam628/devices-simulator.git
+    cd devices-simulator
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python3 -m pip install -e '.[test]'
+    python3 -m pytest -q
+    lulwa-hub
+
+Windows PowerShell:
+
+    git clone https://github.com/migtam628/devices-simulator.git
+    cd devices-simulator
+    py -3 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -e ".[test]"
+    python -m pytest -q
+    lulwa-hub
+
+For the optional native desktop wrapper install the <code>desktop</code> dependency group and launch <code>lulwa-desktop</code>. Native OS webview prerequisites still apply.
+
+### Implementation map
+
+    Desktop hub and wizard
+          │
+          ├─ Device profiles and simulated fault states
+          ├─ Jobs / gallery / diagnostics
+          ├─ Capture engine: PDF, image, partial ZPL → JPG
+          ├─ IPP service and experimental OS printer queues
+          ├─ Scan preview fixture (not an OS scanner)
+          └─ macOS barcode keyboard input (not HID hardware)
+
+The Python package is in <code>src/lulwa_virtual_printer/</code>. Desktop packaging lives in <code>packaging/</code>. GitHub Actions builds Windows, macOS and Linux executables, smoke-tests them, and publishes versioned experimental [Releases](https://github.com/migtam628/devices-simulator/releases).
+
+## Product roadmap
+
+Tracked in [GitHub Issues](https://github.com/migtam628/devices-simulator/issues):
+
+- Native eSCL/AirScan and Windows WIA scanner support
+- True virtual HID/keyboard devices with platform-appropriate permissions and signing
+- Full ZPL and ESC/POS support with barcode fidelity validation
+- Verified PrintNode interoperability
+- Editable workflow Studio, reusable test scenarios and persistence
+- Signed installers, managed updates and retention controls
+
+### Business use and licensing
+
+**No software license terms are currently specified.** Public access to the repository does not automatically grant a company commercial-use or redistribution rights. Please contact the maintainer via the [issue tracker](https://github.com/migtam628/devices-simulator/issues) to establish appropriate licensing and support terms before deployment.
+
+Devices Simulator is independent experimental software. References to Brother and Zebra identify representative test profiles, not an affiliation or endorsement.
+
+---
+
+<div align="center">
+<strong>Test the workflow. Not your patience.</strong><br>
+<a href="https://github.com/migtam628/devices-simulator/releases">Downloads</a> · <a href="docs/index.html">Product page</a> · <a href="docs/COMPANY_EVALUATION.md">For teams</a> · <a href="https://github.com/migtam628/devices-simulator/issues">Feedback</a>
+</div>

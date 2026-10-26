@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="770" viewBox="0 0 1280 770" role="img" aria-labelledby="title desc">
+<title id="title">Devices Simulator interface illustration</title><desc id="desc">A conceptual overview of the device hub, office printer, thermal label and captured JPG output. Illustrative design, not a live screenshot.</desc>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0d2039"/><stop offset=".58" stop-color="#172d50"/><stop offset="1" stop-color="#113e4b"/></linearGradient>
+<linearGradient id="side" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#112943"/><stop offset="1" stop-color="#0c1b31"/></linearGradient>
+<linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3a8de5"/><stop offset="1" stop-color="#2665bf"/></linearGradient>
+<linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#f6faff"/></linearGradient>
+<filter id="shadow" x="-30%" y="-40%" width="160%" height="190%"><feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#09182d" flood-opacity=".25"/></filter>
+<filter id="soft" x="-30%" y="-40%" width="160%" height="190%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#182f55" flood-opacity=".08"/></filter>
+</defs>
+<rect width="1280" height="770" rx="34" fill="url(#bg)"/>
+<circle cx="1145" cy="125" r="230" fill="#54f1d1" opacity=".055"/><circle cx="75" cy="695" r="290" fill="#4e9de9" opacity=".055"/>
+<g filter="url(#shadow)">
+<rect x="76" y="64" width="1128" height="642" rx="22" fill="#f5f8fc"/>
+<path d="M98 64h216v642H98c-12 0-22-10-22-22V86c0-12 10-22 22-22z" fill="url(#side)"/>
+<rect x="76" y="64" width="1128" height="49" rx="22" fill="#fff"/><path d="M76 91h1128v22H76z" fill="#fff"/>
+<circle cx="102" cy="88" r="6" fill="#fb6b6b"/><circle cx="123" cy="88" r="6" fill="#ffbb52"/><circle cx="144" cy="88" r="6" fill="#48cc8c"/>
+<text x="639" y="94" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#4a647e" text-anchor="middle">Devices Simulator — Device Hub Pro</text>
+<rect x="106" y="144" width="33" height="33" rx="9" fill="url(#blue)"/><path d="M116 154h14v14h-14z" fill="none" stroke="#fff" stroke-width="2"/><text x="150" y="158" fill="#fff" font-size="16" font-weight="bold" font-family="Arial,sans-serif">Devices</text><text x="150" y="176" fill="#91b0cf" font-family="Arial,sans-serif" font-size="11">Simulator</text>
+<text x="108" y="229" fill="#7796b7" font-size="10" font-family="Arial,sans-serif" font-weight="bold" letter-spacing="2">WORKSPACE</text>
+<rect x="94" y="244" width="202" height="43" rx="8" fill="#264b75"/><text x="113" y="270" fill="#e9f5ff" font-size="14" font-family="Arial,sans-serif">▦  Dashboard</text>
+<text x="113" y="330" fill="#a9c5df" font-size="14" font-family="Arial,sans-serif">▤  My Devices</text><text x="113" y="379" fill="#a9c5df" font-size="14" font-family="Arial,sans-serif">＋  Create Device</text>
+<text x="113" y="428" fill="#a9c5df" font-size="14" font-family="Arial,sans-serif">▧  Output Gallery</text><text x="113" y="477" fill="#a9c5df" font-size="14" font-family="Arial,sans-serif">◎  Diagnostics</text><text x="113" y="526" fill="#a9c5df" font-size="14" font-family="Arial,sans-serif">◇  Studio</text>
+<circle cx="116" cy="654" r="5" fill="#59d5a4"/><text x="130" y="658" fill="#a9c5df" font-size="12" font-family="Arial,sans-serif">Local service online</text>
+<text x="348" y="159" fill="#237975" font-size="11" font-family="Arial,sans-serif" font-weight="bold" letter-spacing="2">DEVICE WORKFLOW LAB</text>
+<text x="348" y="196" fill="#192d47" font-size="29" font-family="Arial,sans-serif" font-weight="bold">Your simulation workspace</text>
+<text x="349" y="220" fill="#71829a" font-size="13" font-family="Arial,sans-serif">Create devices, run sample jobs, inspect local captures.</text>
+<rect x="1001" y="153" width="162" height="39" rx="9" fill="url(#blue)"/><text x="1082" y="177" fill="#fff" font-size="13" font-family="Arial,sans-serif" font-weight="bold" text-anchor="middle">+ Create Device</text>
+<g filter="url(#soft)">
+<rect x="348" y="250" width="250" height="94" rx="13" fill="url(#panel)"/><text x="367" y="277" fill="#74859b" font-size="13" font-family="Arial,sans-serif">Device profiles</text><text x="366" y="318" fill="#1d2e47" font-size="31" font-family="Arial,sans-serif" font-weight="bold">02</text><rect x="541" y="275" width="35" height="35" rx="9" fill="#edf3fc"/>
+<rect x="613" y="250" width="250" height="94" rx="13" fill="url(#panel)"/><text x="633" y="277" fill="#74859b" font-size="13" font-family="Arial,sans-serif">Captured outputs</text><text x="633" y="318" fill="#1d2e47" font-size="31" font-family="Arial,sans-serif" font-weight="bold">JPG</text><circle cx="836" cy="292" r="17" fill="#e4f6f1"/>
+<rect x="878" y="250" width="285" height="94" rx="13" fill="url(#panel)"/><text x="898" y="277" fill="#74859b" font-size="13" font-family="Arial,sans-serif">System integration</text><text x="897" y="313" fill="#20876e" font-size="16" font-family="Arial,sans-serif" font-weight="bold">Experimental IPP</text>
+</g>
+<rect x="348" y="363" width="514" height="278" rx="14" fill="#fff" stroke="#e3eaf2"/><text x="370" y="395" fill="#1b2c43" font-size="17" font-family="Arial,sans-serif" font-weight="bold">Device library</text><text x="372" y="415" fill="#8091a6" font-size="11" font-family="Arial,sans-serif">Example profiles</text>
+<rect x="370" y="440" width="471" height="83" rx="10" fill="#f6f9fd"/><rect x="383" y="457" width="50" height="50" rx="10" fill="#e2effe"/>
+<path d="M397 465h24v12h-24zm-5 16h34v18h-34zm8 0v13h19v-13" fill="#fff" stroke="#3974aa" stroke-width="2"/>
+<text x="449" y="466" fill="#1c2e46" font-size="15" font-weight="bold" font-family="Arial,sans-serif">Brother-style office printer</text><text x="449" y="491" fill="#7e8e9f" font-size="12" font-family="Arial,sans-serif">Letter · Dual-tray simulation</text>
+<rect x="749" y="463" width="73" height="24" rx="12" fill="#fff2df"/><text x="785" y="479" font-family="Arial,sans-serif" fill="#a27431" font-size="11" font-weight="bold" text-anchor="middle">Test mode</text>
+<rect x="370" y="531" width="471" height="83" rx="10" fill="#f6f9fd"/><rect x="383" y="548" width="50" height="50" rx="10" fill="#e5f6f0"/><path d="M396 556h24v34h-24zM401 566h14m-14 4h14m-14 4h14" fill="#fff" stroke="#269e86" stroke-width="2"/>
+<text x="449" y="559" fill="#1c2e46" font-size="15" font-weight="bold" font-family="Arial,sans-serif">Zebra-style label printer</text><text x="449" y="584" fill="#7e8e9f" font-size="12" font-family="Arial,sans-serif">4 × 6 in · Label capture</text>
+<rect x="749" y="553" width="73" height="24" rx="12" fill="#fff2df"/><text x="785" y="569" font-family="Arial,sans-serif" fill="#a27431" font-size="11" font-weight="bold" text-anchor="middle">Test mode</text>
+<rect x="878" y="363" width="285" height="278" rx="14" fill="#fff" stroke="#e3eaf2"/>
+<text x="898" y="396" fill="#1b2c43" font-size="17" font-family="Arial,sans-serif" font-weight="bold">Output preview</text>
+<rect x="917" y="416" width="204" height="188" rx="7" fill="#f9fbfe" stroke="#dce5f0"/>
+<text x="936" y="441" fill="#315e85" font-size="14" font-family="Arial,sans-serif" font-weight="bold">SHIPPING LABEL</text>
+<text x="936" y="463" fill="#7c8fa0" font-size="11" font-family="Arial,sans-serif">LOCAL TEST · 4 × 6</text><path d="M937 477h161" stroke="#ccd7e4"/>
+<rect x="938" y="490" width="130" height="26" rx="5" fill="#edf3fa"/><text x="946" y="507" fill="#1b314b" font-size="12" font-family="Arial,sans-serif">ORD-TEST-001</text>
+<g fill="#172e44"><rect x="939" y="533" width="4" height="50"/><rect x="947" y="533" width="2" height="50"/><rect x="955" y="533" width="7" height="50"/><rect x="965" y="533" width="3" height="50"/><rect x="973" y="533" width="6" height="50"/><rect x="982" y="533" width="2" height="50"/><rect x="991" y="533" width="9" height="50"/><rect x="1005" y="533" width="4" height="50"/><rect x="1015" y="533" width="7" height="50"/><rect x="1026" y="533" width="2" height="50"/><rect x="1035" y="533" width="8" height="50"/><rect x="1046" y="533" width="4" height="50"/><rect x="1055" y="533" width="7" height="50"/><rect x="1067" y="533" width="3" height="50"/><rect x="1077" y="533" width="6" height="50"/></g>
+</g>
+<rect x="966" y="683" width="219" height="32" rx="16" fill="#15384a" stroke="#457b87" stroke-width="1"/><text x="1075" y="704" fill="#cae9e8" font-size="11" font-family="Arial,sans-serif" text-anchor="middle">Illustrative interface • v0.6</text>
+</svg>

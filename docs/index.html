@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10233b">
+  <meta name="description" content="Devices Simulator is a local-first device workflow lab for testing office printing, 4×6 labels, capture-to-JPG, scanner fixtures and barcode input. Download for Windows, macOS and Linux.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Devices Simulator — Test device workflows without the hardware lab">
+  <meta property="og:description" content="A local-first simulation workspace for print, label and device-dependent software testing.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/migtam628/devices-simulator/main/docs/assets/product-hero.svg">
+  <title>Devices Simulator — A local-first device testing workspace</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="announcement"><span class="dot"></span> EARLY ACCESS <span class="announcement-divider">/</span> Portable builds for Windows, macOS, and Linux <a href="https://github.com/migtam628/devices-simulator/releases">See releases <span aria-hidden="true">↗</span></a></div>
+  <header class="site-header">
+    <div class="nav-shell">
+      <a class="brand" href="#top" aria-label="Devices Simulator home"><span class="brand-icon" aria-hidden="true">▣</span><span>devices<span class="brand-light">simulator</span><span class="brand-point">.</span></span></a>
+      <nav class="desktop-nav" aria-label="Main navigation">
+        <a href="#why">Why it exists</a>
+        <a href="#features">Features</a>
+        <a href="#workflows">Workflows</a>
+        <a href="#compatibility">Compatibility</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="nav-actions"><a class="nav-github" href="https://github.com/migtam628/devices-simulator">GitHub <span aria-hidden="true">↗</span></a><a class="button button-small button-dark" href="https://github.com/migtam628/devices-simulator/releases">Download <span aria-hidden="true">↗</span></a></div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-halo"></div>
+      <div class="container">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-line"></span> THE LOCAL-FIRST DEVICE WORKFLOW LAB</div>
+          <h1>Test the workflow.<br><em>Not your patience.</em></h1>
+          <p class="lead">Build, debug, and demo software that prints documents, generates shipping labels, or accepts barcode input—without setting up a room full of hardware.</p>
+          <div class="hero-actions">
+            <a href="https://github.com/migtam628/devices-simulator/releases" class="button button-light">Get Devices Simulator <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/migtam628/devices-simulator" class="button button-outline">Explore the code <span aria-hidden="true">↗</span></a>
+          </div>
+          <div class="hero-sub"><span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Local JPG captures</span><span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="2"/><path d="M4 9h16" stroke="currentColor" stroke-width="2"/></svg> Cross-platform</span><span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 3 7v5c0 5 4 8 9 9 5-1 9-4 9-9V7L12 3Z" stroke="currentColor" stroke-width="2"/></svg> Local by default</span></div>
+        </div>
+        <div class="hero-media">
+          <img src="assets/product-hero.svg" alt="Illustrative Devices Simulator dashboard with a dual-tray office printer, a 4×6 label printer and a sample JPG output" width="1280" height="770">
+          <p class="media-caption">Illustrative product view. Device availability depends on platform and printer backend.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="audience-strip"><div class="container"><span>BUILT FOR THE TEAMS WHO BUILD OPERATIONAL SOFTWARE</span><div><strong>QA engineering</strong><i></i><strong>Retail &amp; POS</strong><i></i><strong>Fulfillment platforms</strong><i></i><strong>Sales engineering</strong></div></div></div>
+
+    <section class="section section-problem" id="why">
+      <div class="container split-section">
+        <div class="section-intro"><span class="overline">01 / THE PROBLEM</span><h2>Hardware shouldn’t block your next test cycle.</h2></div>
+        <div class="section-body"><p>Every physical device introduces extra setup, maintenance, access constraints, and hard-to-reproduce bugs. Yet your application still needs to produce the right document, respect the right label size, and handle failure states.</p><p>Devices Simulator gives software teams a <strong>repeatable local test surface</strong> for print and device-dependent workflows. Keep the real hardware for final compatibility checks—not every iteration.</p><a class="inline-link" href="#workflows">See how the workflow works <span aria-hidden="true">↗</span></a></div>
+      </div>
+    </section>
+
+    <section class="section features-section" id="features">
+      <div class="container">
+        <div class="section-header"><div><span class="overline">02 / CAPABILITIES</span><h2>Everything you need to<br>see what your app sends.</h2></div><p>From simulated queues to captured labels, validate the parts of your integration that can be tested locally.</p></div>
+        <div class="feature-grid">
+          <article class="feature-card feature-card-wide"><span class="feature-symbol">▤</span><div><span class="tag tag-beta">EXPERIMENTAL OS INTEGRATION</span><h3>Office printing and dual trays</h3><p>Create Brother-style printer profiles, configure tray behavior, and test local IPP printer queues. Examine the job instead of wasting paper.</p></div><div class="feature-mini-tray"><div><b>Tray 01</b><small>Packing slips</small></div><div><b>Tray 02</b><small>Invoices</small></div></div></article>
+          <article class="feature-card"><span class="feature-symbol green">▥</span><span class="tag tag-ready">AVAILABLE IN APP</span><h3>4 × 6 label preview</h3><p>Build Zebra-style label workflows, render a supported subset of ZPL, and review captured pages visually.</p><div class="feature-inline">203 DPI <span></span> JPG OUTPUT</div></article>
+          <article class="feature-card"><span class="feature-symbol indigo">▧</span><span class="tag tag-ready">AVAILABLE IN APP</span><h3>Output gallery</h3><p>Save PDF, PNG, JPEG, and supported ZPL jobs as JPG images with original documents and job metadata.</p><div class="feature-inline">CAPTURE → INSPECT → COMPARE</div></article>
+          <article class="feature-card"><span class="feature-symbol orange">⚑</span><span class="tag tag-ready">AVAILABLE IN APP</span><h3>Failure-state testing</h3><p>Simulate offline, jammed, paper-out, and paused printers to exercise application error paths.</p><div class="feature-inline">REPEATABLE ERROR SCENARIOS</div></article>
+          <article class="feature-card"><span class="feature-symbol green">◎</span><span class="tag tag-beta">PREVIEW / macOS</span><h3>Scanner &amp; barcode fixtures</h3><p>Use an in-app flatbed scan preview or macOS Accessibility-based barcode typing. Neither installs a native scanner driver.</p><div class="feature-inline">SAFE, CLEARLY LABELED SIMULATION</div></article>
+          <article class="feature-card feature-card-cta"><span class="overline">DEVELOPMENT TOOLKIT</span><h3>Make every device interaction observable.</h3><p>Use the job list, debug states, and verification path to understand what happened between submission and capture.</p><a class="inline-link" href="https://github.com/migtam628/devices-simulator">View source &amp; documentation <span aria-hidden="true">↗</span></a></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section workflow-section" id="workflows">
+      <div class="container workflow-layout">
+        <div><span class="overline">03 / PRODUCT WORKFLOW</span><h2>Four steps.<br>Less guesswork.</h2><p>Submit realistic samples, let the simulated device process them, then inspect the output and any failures.</p><div class="workflow-steps"><div><span>01</span><p><strong>Pick a device profile</strong><br>Office printer, shipping label or scan fixture.</p></div><div><span>02</span><p><strong>Send a sample job</strong><br>Import PDF, image or supported ZPL data.</p></div><div><span>03</span><p><strong>Simulate processing</strong><br>Normal, offline, jam and other test states.</p></div><div><span>04</span><p><strong>Inspect the evidence</strong><br>JPG output, job history and diagnostic details.</p></div></div></div>
+        <div class="workflow-art"><img src="assets/device-preview.svg" alt="Illustration showing a dual-tray office printer and a vertical 4 by 6 label capture" loading="lazy" width="940" height="500"><div class="workflow-note"><span class="status-led"></span><div><b>Local-first, observable output</b><span>No cloud service required for basic capture</span></div></div></div>
+      </div>
+    </section>
+
+    <section class="section usecase-section">
+      <div class="container"><div class="section-header"><div><span class="overline">04 / BUILT FOR TEAMS</span><h2>One lab. Many workflows.</h2></div><p>Designed for engineers and operators who need confidence before hardware deployment.</p></div><div class="usecase-grid">
+        <article><span>↗</span><h3>QA &amp; test engineering</h3><p>Reproduce print output and error scenarios across feature branches and test environments.</p></article>
+        <article><span>↗</span><h3>Shipping &amp; fulfillment</h3><p>Review packing slips and 4 × 6 label layouts before trying them on physical thermal printers.</p></article>
+        <article><span>↗</span><h3>Retail, POS &amp; kiosks</h3><p>Check document handling and queue behavior early in the rollout process.</p></article>
+        <article><span>↗</span><h3>Product demos &amp; training</h3><p>Show output flows in a controlled demo without carrying a printer fleet to every meeting.</p></article>
+      </div></div>
+    </section>
+
+    <section class="section matrix-section" id="compatibility">
+      <div class="container"><div class="section-header"><div><span class="overline">05 / COMPATIBILITY &amp; TRUST</span><h2>Clear capabilities.<br>No hardware theater.</h2></div><p>Know what works locally, what is experimental, and what still needs platform engineering.</p></div>
+      <div class="matrix-scroll"><table class="cap-table"><caption>Current Devices Simulator functionality — exact availability varies by OS</caption><thead><tr><th>Capability</th><th>Current status</th><th>Important note</th></tr></thead><tbody>
+        <tr><td>PDF / JPG / PNG to local JPG</td><td><span class="tag tag-ready">IN-APP</span></td><td>Captures output files; not physical paper</td></tr>
+        <tr><td>Brother / Zebra-style printer profiles</td><td><span class="tag tag-beta">EXPERIMENTAL</span></td><td>Native queue registration subject to OS compatibility</td></tr>
+        <tr><td>CUPS print → JPG verification</td><td><span class="tag tag-beta">EXPERIMENTAL</span></td><td>macOS / Linux; printer backend must accept the job</td></tr>
+        <tr><td>Partial ZPL renderer &amp; printer faults</td><td><span class="tag tag-ready">IN-APP</span></td><td>Unsupported ZPL commands reported explicitly</td></tr>
+        <tr><td>Flatbed scanner fixture</td><td><span class="tag tag-ready">IN-APP</span></td><td>Does not appear as a native scanner</td></tr>
+        <tr><td>macOS barcode keyboard simulation</td><td><span class="tag tag-beta">EXPERIMENTAL</span></td><td>Accessibility permission; not a HID driver</td></tr>
+        <tr><td>Native WIA/eSCL scanner or HID driver</td><td><span class="tag tag-planned">PLANNED</span></td><td>Not implemented</td></tr>
+        <tr><td>Signed installers / PrintNode certification</td><td><span class="tag tag-planned">PLANNED</span></td><td>Not implemented / not certified</td></tr>
+      </tbody></table></div>
+      <div class="trust-note"><div class="trust-icon" aria-hidden="true">i</div><p><strong>Built for evaluation, not physical fulfillment.</strong> A captured JPG is evidence of a simulated job, not proof of shipping, actual paper output, certified drivers, or real-world scanner compatibility. Your output files stay on your machine by default and may contain sensitive customer information.</p></div></div>
+    </section>
+
+    <section class="section download-section" id="download"><div class="container"><div class="download-panel"><div><span class="overline">06 / GET STARTED</span><h2>Your next print test<br>starts here.</h2><p>Download a portable development build, create your first device profile, and capture a sample job in minutes.</p><div class="row-buttons"><a class="button button-light" href="https://github.com/migtam628/devices-simulator/releases">Download latest build <span aria-hidden="true">↗</span></a><a class="button button-outline" href="https://github.com/migtam628/devices-simulator/blob/main/README.md">Read the setup guide</a></div></div><div class="platform-panel"><span class="platform-label">AVAILABLE BUILDS</span><div><span>⊞</span><b>Windows</b><small>x64</small></div><div><span>●</span><b>macOS</b><small>Intel + Apple Silicon</small></div><div><span>⌘</span><b>Linux</b><small>x64</small></div><p>Unsigned early-access executables. Python is bundled; platform prerequisites may apply.</p></div></div></div></section>
+
+    <section class="section faq-section" id="faq"><div class="container faq-layout"><div><span class="overline">07 / QUESTIONS</span><h2>Good questions.<br>Straight answers.</h2><p>Considering a pilot with your QA or engineering team? Here’s what you should know first.</p><a href="https://github.com/migtam628/devices-simulator/issues" class="inline-link">Ask a question on GitHub <span aria-hidden="true">↗</span></a></div><div class="faq-list">
+      <details><summary>Does it replace our physical printers?</summary><p>No. It accelerates local development and QA with simulated queues and captured output. You should still validate drivers, exact media handling and hardware behavior on the real devices before production rollout.</p></details>
+      <details><summary>Will a simulated printer appear in system printer settings?</summary><p>Brother-style and Zebra-style IPP queue registration is available experimentally. Whether the OS accepts the queue and can deliver document bytes depends on the host platform and print backend.</p></details>
+      <details><summary>Does it install a real scanner or virtual HID keyboard?</summary><p>Not yet. The flatbed scan feature is an in-app fixture; macOS barcode input is keyboard-event simulation requiring Accessibility permission. Neither installs a native scanner/HID driver.</p></details>
+      <details><summary>Does it need internet or a cloud account?</summary><p>Core device profiles and document capture run locally without a cloud account. Internet access is needed to download builds, visit GitHub, or use external integrations.</p></details>
+      <details><summary>Can our company use it commercially?</summary><p>Contact the maintainer to clarify licensing and business use. The repository has not yet established a commercial-use license or paid support agreement. Evaluate the current release as an experimental development tool.</p></details>
+    </div></div></section>
+  </main>
+  <footer class="footer"><div class="container"><div class="footer-top"><div><a class="brand" href="#top"><span class="brand-icon" aria-hidden="true">▣</span><span>devices<span class="brand-light">simulator</span><span class="brand-point">.</span></span></a><p>A local-first lab for software that works with devices.</p></div><div class="footer-links"><div><b>Product</b><a href="#features">Features</a><a href="#compatibility">Compatibility</a><a href="https://github.com/migtam628/devices-simulator/releases">Releases</a></div><div><b>Developers</b><a href="https://github.com/migtam628/devices-simulator">Repository</a><a href="https://github.com/migtam628/devices-simulator/issues">Issues &amp; feedback</a><a href="COMPANY_EVALUATION.md">Company evaluation</a></div></div></div><div class="footer-bottom"><span>© 2026 Devices Simulator · Experimental software</span><span>Built for more reliable device workflows.</span></div></div></footer>
+</body></html>
