@@ -59,7 +59,7 @@ def test_landing_page_concept_hybrid():
         assert f'id="{section}"' in page
     assert page.count('class="feature-card"') == 6
     assert page.count('class="step-card"') == 4
-    assert 'assets/device-lab.svg' in page
+    assert 'class="product-window"' in page
     assert "This hero" not in page
     assert "native scanner driver" in page.lower()
     assert "not a virtual hid" in page.lower()
