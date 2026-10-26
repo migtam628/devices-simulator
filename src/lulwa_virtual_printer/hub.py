@@ -24,6 +24,8 @@ from urllib.parse import unquote, urlparse
 from .engine import PROFILES, capture
 from .native_printers import get_registration, install_printer, uninstall_printer, service_ready, PORT
 from .hid_barcode import MacBarcodeHID
+from .mac_scale_hid import MacScaleHID
+from .device_catalog import BY_ID
 from .os_print_test import verify_print_roundtrip
 from .device_catalog import public_catalog, select_model
 
@@ -284,7 +286,7 @@ class HubStore:
         return None
 
 
-def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
+def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: MacScaleHID):
     class Handler(BaseHTTPRequestHandler):
         server_version = "DevicesHub/0.3"
         protocol_version = "HTTP/1.1"
@@ -319,6 +321,7 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
                 return self.send(200, {
                     "devices": devices, "jobs": store.list_jobs(), "registrations": registrations,
                     "ipp_service_ready": service_ready(), "hid": hid.state(),
+                    "scale_hid": scale_hid.state(),
                     "presets": PRESETS, "catalog": public_catalog(),
                     "platform": platform.system(), "output_dir": str(store.output_dir),
                     "service": "local", "os_install_supported": platform.system() in ("Darwin", "Linux", "Windows"),
@@ -366,6 +369,32 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
                         return self.send(400, {"error": "Confirm this OS print test first"})
                     result = verify_print_roundtrip(str(payload.get("preset", "")), store.output_dir)
                     return self.send(200, {"verification": result})
+                if path.startswith("/api/scale-hid/"):
+                    device_id = str(payload.get("device_id", ""))
+                    device = store.get_device(device_id)
+                    if not device or device.get("category") != "scale" or device.get("transport") != "usb_hid":
+                        return self.send(400, {"error": "Choose a saved USB HID scale profile"})
+                    if device.get("model_id") not in ("dymo-m10", "dymo-m25", "generic-scale"):
+                        return self.send(400, {"error": "Current CoreHID preview supports generic POS / DYMO M-series reference profiles"})
+                    if path == "/api/scale-hid/start":
+                        if payload.get("confirm") is not True:
+                            return self.send(400, {"error": "Explicit virtual HID activation confirmation required"})
+                        status = scale_hid.start(device_id)
+                        # A first zero reading is sent only after helper activation.
+                        scale_hid.send(device_id, 0, capacity_kg=BY_ID[device["model_id"]].get("max_kg", 4.5))
+                        return self.send(200, {"scale_hid": scale_hid.state()})
+                    if path == "/api/scale-hid/stop":
+                        if payload.get("confirm") is not True:
+                            return self.send(400, {"error": "Confirm virtual HID deactivation"})
+                        if scale_hid.device_id != device_id:
+                            return self.send(409, {"error": "Selected scale is not active"})
+                        return self.send(200, {"scale_hid": scale_hid.stop()})
+                    if path == "/api/scale-hid/probe":
+                        if scale_hid.device_id != device_id:
+                            return self.send(409, {"error": "Activate this scale before checking OS enumeration"})
+                        scale_hid.probe()
+                        return self.send(200, {"scale_hid": scale_hid.state()})
+                    return self.send(404, {"error": "Unknown scale HID action"})
                 if path == "/api/studio/run":
                     result = store.run_shipping_demo(str(payload.get("brother_id","")),
                                                      str(payload.get("zebra_id","")))
@@ -394,7 +423,16 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "model":
                     return self.send(200, {"device": store.update_model(parts[2], payload)})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "scale-reading":
-                    return self.send(200, {"reading": store.simulate_scale_reading(parts[2], payload)})
+                    reading = store.simulate_scale_reading(parts[2], payload)
+                    if scale_hid.active() and scale_hid.device_id == parts[2]:
+                        # HID input uses tare-adjusted net mass, never gross weight.
+                        scale_state = scale_hid.send(
+                            parts[2], reading["net_kg"],
+                            stable=reading["stable"],
+                            capacity_kg=reading["max_kg"])
+                        reading["hid_dispatch"] = "sent" if scale_state["running"] else "unavailable"
+                        reading["os_enumerated"] = scale_state["external_visible"]
+                    return self.send(200, {"reading": reading})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "settings":
                     return self.send(200, {"device": store.configure_device(parts[2], payload)})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "test":
@@ -434,8 +472,10 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     store = HubStore(Path(state_dir), Path(output_dir))
     token = secrets.token_urlsafe(32)
     hid = MacBarcodeHID()
-    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid))
+    scale_hid = MacScaleHID()
+    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid, scale_hid))
     server.hub_hid = hid
+    server.hub_scale_hid = scale_hid
     server.hub_store = store
     server.hub_token = token
     return server
@@ -486,6 +526,7 @@ def main():
                 pass
             finally:
                 server.hub_hid.stop()
+                server.hub_scale_hid.stop()
     finally:
         stop_attached_ipp(ipp_server, ipp_thread)
 

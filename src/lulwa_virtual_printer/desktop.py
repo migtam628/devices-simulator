@@ -30,6 +30,7 @@ def main():
             webview.start()
         finally:
             server.hub_hid.stop()
+            server.hub_scale_hid.stop()
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)

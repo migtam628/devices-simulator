@@ -56,3 +56,7 @@ Do not spoof vendor USB VID/PIDs without research and explicit user intent; a se
 ## Source extension pattern
 
 Add a tested entry to `MODELS` in `src/lulwa_virtual_printer/device_catalog.py` with the real category, verified manufacturer/model name, allowed transports, source URL and a clear capability note. Include `DEFAULT_MODEL` only when defining a new device category/preset. Never mark `transport_status` as connected until the native adapter can prove it.
+
+## Native HID preview update
+
+The v0.8 macOS prototype includes a generic CoreHID POS-scale process, under [the CoreHID testing guide](MACOS_COREHID_SCALE.md). Native registration is explicitly conditional on Apple entitlement, external OS enumeration and application compatibility. v0.7 stored scale data only; the v0.8 build can attempt standard HID report dispatch when signed appropriately.

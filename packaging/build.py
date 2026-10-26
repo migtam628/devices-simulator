@@ -80,6 +80,12 @@ def main():
                        check=True)
         subprocess.run([str(binary), "--self-test"], check=True)
         cmd += ["--add-binary", f"{binary}{delimiter}lulwa_virtual_printer/bin"]
+        scale_source = ROOT / "packaging" / "macos" / "scale_corehid.swift"
+        scale_binary = ROOT / "build" / "mac_scale_corehid"
+        subprocess.run(["swiftc", "-parse-as-library", "-O",
+                        str(scale_source), "-o", str(scale_binary)], check=True)
+        subprocess.run([str(scale_binary), "--self-test"], check=True)
+        cmd += ["--add-binary", f"{scale_binary}{delimiter}lulwa_virtual_printer/bin"]
     if target_os in ("Windows", "macOS"):
         cmd += ["--windowed", "--collect-all", "webview"]
     cmd.append(str(ROOT / "packaging" / "launcher.py"))

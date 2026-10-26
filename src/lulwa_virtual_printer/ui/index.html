@@ -74,11 +74,29 @@ function modelEditor(d){
  '<div class="notice warn mt"><b>Emulation boundary</b>'+clean(selected.note||"")+'<p class="small mt">This does not enumerate USB hardware, broadcast BLE, or bind a network port.</p></div>'+
  button("Save model & transport","save-model:"+d.id,"primary")+'</div>';
 }
+function scaleNativeControls(d){
+ if(d.category!=="scale")return "";
+ const compatible=d.transport==="usb_hid"&&["dymo-m10","dymo-m25","generic-scale"].includes(d.model_id);
+ const h=state.scale_hid||{},running=!!h.running&&h.device_id===d.id;
+ return '<div class="card"><div class="cardhead"><h2>macOS CoreHID POS scale · Developer Preview</h2>'+
+ badge(running?(h.external_visible?"Enumerated by hidutil":"Running · not externally verified"):"Not connected",running&&h.external_visible?"green":"amber")+'</div>'+
+ '<p class="muted">Experimental, standards-based HID POS scale. This is not a real USB port or an official DYMO M10/M25 device. macOS 15+ and an approved Apple virtual HID entitlement are required. Unsigned releases may be denied.</p>'+
+ '<div class="item">Host: '+clean(state.platform)+'</div>'+
+ '<div class="item">Helper: '+badge(h.available?"Bundled":"Unavailable",h.available?"green":"amber")+'</div>'+
+ '<div class="item">Device registration: '+badge(h.external_visible&&running?"Verified via hidutil":running?"Created, not enumerated":"Not installed",running&&h.external_visible?"green":"amber")+'</div>'+
+ (h.last_error?'<div class="notice warn mt"><b>Activation diagnostic</b>'+clean(h.last_error)+'</div>':"")+
+ '<div class="row wrap mt">'+button("Activate virtual POS scale","scale-hid-start:"+d.id,"primary",running||!h.available||!compatible)+
+ button("Check macOS enumeration","scale-hid-probe:"+d.id,"",!running)+
+ button("Deactivate","scale-hid-stop:"+d.id,"danger",!running)+'</div>'+
+ '<p class="small mt">If activated, the Weight Test Bench below dispatches a six-byte HID scale report when you generate a reading. Another app must recognize the POS usage page independently.</p>'+
+ (!compatible?'<div class="notice mt">Select a supported DYMO M10/M25 or Generic Scale reference with USB HID transport first.</div>':"")+
+ '</div>';
+}
 function scaleControls(d){
  if(d.category!=="scale")return "";
  const m=d.last_measurement;
- return '<div class="card"><div class="cardhead"><h2>Shipping Scale Test Bench</h2>'+badge("In-app only","green")+'</div>'+
- '<p class="muted">Send a deterministic simulated reading to the local hub. No physical scale, HID report, BLE indication, or TCP socket is created.</p>'+
+ return '<div class="card"><div class="cardhead"><h2>Shipping Scale Test Bench</h2>'+badge("Local fixture","green")+'</div>'+
+ '<p class="muted">Send a deterministic simulated reading to the local hub. Local fixture output. If the opt-in CoreHID helper is active, the report is also dispatched to the macOS HID subsystem; no physical USB device is created.</p>'+
  '<div class="grid two"><label class="field"><span>Gross weight (kg)</span><input id="scale-gross" type="number" min="0" step="0.001" value="1.250"></label>'+
  '<label class="field"><span>Tare weight (kg)</span><input id="scale-tare" type="number" min="0" step="0.001" value="0.100"></label>'+
  '<label class="field"><span>Output units</span><select id="scale-unit">'+["kg","lb","g","oz"].map(u=>'<option value="'+u+'" '+(u===(m?.unit||"lb")?"selected":"")+'>'+u+'</option>').join("")+'</select></label>'+
@@ -129,7 +147,7 @@ function hidControls(){
 function detail(){const d=state.devices.find(x=>x.id===active);if(!d)return devices();const p=preset(d.preset),b=d.preset==="brother",z=d.preset==="zebra";return heading("DEVICE MANAGEMENT",d.name,p.label+" · "+p.media,button("Run sample","test:"+d.id,"primary",!b&&!z&&d.preset!=="scanner")+button("Delete profile","remove:"+d.id,"danger"))+
 '<div class="grid split"><div class="stack"><div class="card"><div class="cardhead"><h2>'+(b?"Brother Dual-Tray Configuration":z?"Zebra 4×6 Thermal Configuration":d.preset==="barcode"?"Barcode Input Simulator":"Device Profile Preview")+'</h2>'+badge(p.capability==="planned"?"Planned backend":p.capability==="preview_only"?"In-app preview":"Experimental OS integration","amber")+'</div>'+
 (b?'<div class="grid two">'+[1,2].map(i=>'<div class="tray"><b>Tray '+i+'</b><div class="art">▤</div><div class="small">Letter · '+(i===1?"Packing slips":"Invoices")+'</div>'+badge(d.tray==="tray-"+i?"Current default":"Profile available",d.tray==="tray-"+i?"green":"")+'</div>').join("")+'</div>':z?'<div class="labelart"><b>LULWA SWIM</b>SHIPPING LABEL<br><small>Illustrative preview</small><div class="barcode"></div>4 × 6 in · 203 DPI</div>':'<div class="notice warn">This category is a configuration preview only. No native OS driver is installed.</div>')+'</div>'+
-(d.preset==="barcode"?hidControls():"")+modelEditor(d)+scaleControls(d)+'<div class="card"><h2>Capture a document</h2><p class="muted">Create a test PDF or import an existing PDF/JPG/PNG. JPG output is local.</p><div class="row wrap mt">'+button("Generate Sample","test:"+d.id,"primary",!b&&!z&&d.preset!=="scanner")+(b||z||d.preset==="scanner"?'<label class="btn" style="cursor:pointer">Import Document<input style="display:none" type="file" id="file" data-device="'+clean(d.id)+'" accept=".pdf,.jpg,.jpeg,.png,.zpl"></label>':"")+'</div></div></div>'+
+(d.preset==="barcode"?hidControls():"")+modelEditor(d)+scaleNativeControls(d)+scaleControls(d)+'<div class="card"><h2>Capture a document</h2><p class="muted">Create a test PDF or import an existing PDF/JPG/PNG. JPG output is local.</p><div class="row wrap mt">'+button("Generate Sample","test:"+d.id,"primary",!b&&!z&&d.preset!=="scanner")+(b||z||d.preset==="scanner"?'<label class="btn" style="cursor:pointer">Import Document<input style="display:none" type="file" id="file" data-device="'+clean(d.id)+'" accept=".pdf,.jpg,.jpeg,.png,.zpl"></label>':"")+'</div></div></div>'+
 '<div class="stack"><div class="card"><h2>Installation status</h2><div class="item">Device profile '+badge("Draft")+'</div><div class="item">OS registration '+regBadge(d.preset)+'</div><div class="item">PrintNode '+badge("Not tested","amber")+'</div>'+(b||z?installControls(d.preset)+button("OS Print Test","os-test:"+d.preset,"",registration(d.preset).status!=="registered"||state.platform==="Windows"):"")+button("System Integration","integration")+'</div>'+(b||z?'<div class="card"><h2>Simulation controls</h2><label class="field"><span>Printer condition</span><select id="device-fault">'+["none","offline","paper_out","jam","paused"].map(f=>'<option value="'+f+'" '+((d.fault||"none")===f?"selected":"")+'>'+f.replaceAll("_"," ")+'</option>').join("")+'</select></label>'+(b?'<label class="field"><span>Brother paper source</span><select id="device-tray">'+["tray-1","tray-2"].map(t=>'<option value="'+t+'" '+(d.tray===t?"selected":"")+'>'+t+'</option>').join("")+'</select></label>':"")+button("Save Simulation Settings","save-settings:"+d.id,"primary")+'</div>':"")+'<div class="card"><h2>Settings</h2><div class="item">Media: '+clean(d.media)+'</div><div class="item">DPI: '+clean(d.dpi||"N/A")+'</div><div class="item">Tray: '+clean(b?d.tray:"N/A")+'</div><div class="item">Last API test: '+clean(d.last_test?.status||"Not run")+'</div></div></div></div>'}
 function diagnostics(){return heading("COMMAND CENTER","Diagnostics","Monitoring the real local service, without pretending OS installation was verified.",button("Refresh","refresh"))+
 '<div class="diag"><h2 style="margin:0">Local systems health</h2><div class="diagcards">'+[['Capture engine','Available','PDF/image → JPG'],['OS print queues','Unverified','Native printer list not queried'],['Profiles',state.devices.length,'Persistent local JSON']].map(([a,b,c])=>'<div class="diagcard"><small>'+a+'</small><strong>'+b+'</strong><small>'+c+'</small></div>').join("")+'</div><div class="grid two"><div class="diagcard"><h3>Capability checks</h3>'+[['Hub API','Running'],['JPG capture','Available'],['IPP queues','Experimental'],['ZPL renderer','Partial Code128, text and boxes'],['Scanner/HID','Planned']].map(([a,b])=>'<div class="diagrow"><span>'+a+'</span><b>'+b+'</b></div>').join("")+'</div><div class="diagcard"><h3>Recent captures</h3>'+(state.jobs.length?state.jobs.slice(0,5).map(j=>'<div class="diagrow"><span>'+clean(j.title)+'</span><b>'+clean(j.status)+'</b></div>').join(""):'<p class="small">No captured jobs yet.</p>')+'</div></div></div>'}
@@ -211,6 +229,25 @@ if(k.startsWith("save-model:")){
  try{await post("/api/devices/"+id+"/model",{model_id,transport});await refresh();goto("detail",id);showToast("Model and connection saved as a reference profile")}
  catch(e){showToast(e.message,true)}return;
 }
+if(k.startsWith("scale-hid-start:")){
+ const id=k.slice("scale-hid-start:".length);
+ if(!confirm("Activate a macOS virtual HID POS scale? This requires approved Apple entitlements, can affect HID enumeration, and is not an official DYMO scale."))return;
+ try{const res=await post("/api/scale-hid/start",{device_id:id,confirm:true});await refresh();goto("detail",id);
+ showToast(res.scale_hid.external_visible?"POS scale enumerated in macOS":"CoreHID created device; external HID enumeration is not verified")}
+ catch(e){await refresh();goto("detail",id);showToast(e.message,true)}return;
+}
+if(k.startsWith("scale-hid-stop:")){
+ const id=k.slice("scale-hid-stop:".length);
+ if(!confirm("Deactivate the virtual POS scale?"))return;
+ try{await post("/api/scale-hid/stop",{device_id:id,confirm:true});await refresh();goto("detail",id);showToast("Virtual scale deactivated")}
+ catch(e){showToast(e.message,true)}return;
+}
+if(k.startsWith("scale-hid-probe:")){
+ const id=k.slice("scale-hid-probe:".length);
+ try{const r=await post("/api/scale-hid/probe",{device_id:id});await refresh();goto("detail",id);
+ showToast(r.scale_hid.external_visible?"Found by macOS hidutil":"Not visible to macOS hidutil. No OS registration is claimed.",!r.scale_hid.external_visible)}
+ catch(e){showToast(e.message,true)}return;
+}
 if(k.startsWith("scale-read:")){
  const id=k.slice("scale-read:".length);
  try{const result=await post("/api/devices/"+id+"/scale-reading",{
@@ -219,7 +256,7 @@ if(k.startsWith("scale-read:")){
    unit:E("scale-unit")?.value||"kg",
    stable:E("scale-stable")?.value==="true"
  });await refresh();goto("detail",id);
- showToast("Fixture reading: "+result.reading.weight+" "+result.reading.unit+" ("+result.reading.status+")")}
+ showToast("Reading: "+result.reading.weight+" "+result.reading.unit+" ("+result.reading.status+")"+(result.reading.hid_dispatch==="sent"?" · HID report dispatched":" · local fixture only"))}
  catch(e){showToast(e.message,true)}return;
 }
 if(k.startsWith("test:"))return test(k.slice(5));

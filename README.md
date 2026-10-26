@@ -57,6 +57,13 @@ In **Create Device**, pick a category → brand → model → connection. Each c
 
 Read the **[Device catalog and transport architecture](docs/DEVICE_CATALOG_PROTOCOLS.md)** for researched models, official manufacturer sources and the native transport roadmap.
 
+## Experimental macOS virtual HID POS scale (v0.8)
+
+The app now includes an opt-in native **CoreHID** prototype for a generic POS shipping scale on macOS 15+. It encodes USB-IF scale reports and provides Activate, Send weight, Check OS enumeration and Deactivate controls.
+
+**Apple's HID virtual-device entitlement is required.** Ordinary unsigned Releases do not have approved entitlements. An attempted activation can fail with a precise diagnostic; the app must not show a connected device unless the OS accepts it. Even if it enumerates, this is NOT a DYMO M10 USB identity/VID/PID clone.
+
+See the [macOS CoreHID scale development and test guide](docs/MACOS_COREHID_SCALE.md). Other OS HID drivers remain planned.
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
