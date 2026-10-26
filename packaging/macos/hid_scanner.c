@@ -5,7 +5,8 @@
  */
 #define _DARWIN_C_SOURCE
 #include <CoreFoundation/CoreFoundation.h>
-#include <IOKit/hid/IOHIDUserDevice.h>
+#include <IOKit/IOKitLib.h>
+#include <dlfcn.h>
 #include <IOKit/hid/IOHIDKeys.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -25,7 +26,19 @@ static const uint8_t kKeyboardDescriptor[] = {
     0x95,0x06, 0x75,0x08, 0x15,0x00, 0x25,0x65,
     0x05,0x07, 0x19,0x00, 0x29,0x65, 0x81,0x00, 0xC0
 };
-static IOHIDUserDeviceRef gDevice = NULL;
+/* The classic IOHIDUserDevice API is omitted from newer Xcode SDK headers.
+ * Resolve the exported runtime functions instead of relying on removed headers.
+ * Any unavailable symbol is a clean unsupported error rather than a linker crash.
+ */
+typedef CFTypeRef SimHIDDeviceRef;
+typedef SimHIDDeviceRef (*HIDCreateFn)(CFAllocatorRef, CFDictionaryRef);
+typedef void (*HIDRunLoopFn)(SimHIDDeviceRef, CFRunLoopRef, CFStringRef);
+typedef IOReturn (*HIDReportFn)(SimHIDDeviceRef, const uint8_t *, CFIndex);
+static HIDCreateFn pCreate = NULL;
+static HIDRunLoopFn pSchedule = NULL;
+static HIDRunLoopFn pUnschedule = NULL;
+static HIDReportFn pHandle = NULL;
+static SimHIDDeviceRef gDevice = NULL;
 static CFRunLoopRef gLoop = NULL;
 
 static void number_property(CFMutableDictionaryRef props, CFStringRef key, int value) {
@@ -51,10 +64,10 @@ static int send_key(uint8_t key, uint8_t modifier) {
     uint8_t report[8] = {0};
     report[0] = modifier;
     report[2] = key;
-    IOReturn ret = IOHIDUserDeviceHandleReport(gDevice, report, sizeof(report));
+    IOReturn ret = pHandle(gDevice, report, sizeof(report));
     usleep(12000);
     memset(report, 0, sizeof(report));
-    IOReturn released = IOHIDUserDeviceHandleReport(gDevice, report, sizeof(report));
+    IOReturn released = pHandle(gDevice, report, sizeof(report));
     usleep(12000);
     return ret == kIOReturnSuccess && released == kIOReturnSuccess;
 }
@@ -100,7 +113,16 @@ int main(int argc, char **argv) {
     CFDictionarySetValue(props, CFSTR(kIOHIDTransportKey), CFSTR("Virtual"));
     number_property(props, CFSTR(kIOHIDVendorIDKey), 0xF00D); /* test-only virtual VID */
     number_property(props, CFSTR(kIOHIDProductIDKey), 0xBACE);
-    gDevice = IOHIDUserDeviceCreate(kCFAllocatorDefault, props);
+    pCreate = (HIDCreateFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceCreate");
+    pSchedule = (HIDRunLoopFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceScheduleWithRunLoop");
+    pUnschedule = (HIDRunLoopFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceUnscheduleFromRunLoop");
+    pHandle = (HIDReportFn)dlsym(RTLD_DEFAULT, "IOHIDUserDeviceHandleReport");
+    if (!pCreate || !pSchedule || !pUnschedule || !pHandle) {
+        fprintf(stderr,"ERR virtual HID API unavailable on this macOS build\n");
+        CFRelease(descriptor); CFRelease(props);
+        return 4;
+    }
+    gDevice = pCreate(kCFAllocatorDefault, props);
     CFRelease(descriptor);
     CFRelease(props);
     if (!gDevice) {
@@ -109,7 +131,7 @@ int main(int argc, char **argv) {
     }
     gLoop = CFRunLoopGetCurrent();
     CFRetain(gLoop);
-    IOHIDUserDeviceScheduleWithRunLoop(gDevice, gLoop, kCFRunLoopDefaultMode);
+    pSchedule(gDevice, gLoop, kCFRunLoopDefaultMode);
     pthread_t worker;
     if (pthread_create(&worker, NULL, read_commands, NULL) != 0) {
         fprintf(stderr,"ERR scanner command reader failed\n");
@@ -119,7 +141,7 @@ int main(int argc, char **argv) {
     puts("READY"); fflush(stdout);
     CFRunLoopRun();
     pthread_join(worker, NULL);
-    IOHIDUserDeviceUnscheduleFromRunLoop(gDevice, gLoop, kCFRunLoopDefaultMode);
+    pUnschedule(gDevice, gLoop, kCFRunLoopDefaultMode);
     CFRelease(gDevice);
     CFRelease(gLoop);
     return 0;
