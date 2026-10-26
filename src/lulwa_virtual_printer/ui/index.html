@@ -15,13 +15,13 @@
 body.dark{--bg:#101820;--surface:#172333;--line:#35475d;--ink:#eef3f9;--mute:#b0bece;--blue:#78b7f4;--pale:#233954}body.dark .tile:hover,body.dark .choice.active{background:#243b55}body.dark .table th{background:#25364a}body.dark .empty{background:#1b2738}body.dark .notice{background:#213b55;border-color:#365b7b;color:#c2dff7}body.dark .notice.warn{background:#45371f;border-color:#76572b;color:#efce94}
 @media(max-width:1200px){.side{width:202px}.four,.gallery{grid-template-columns:repeat(2,1fr)}.three{grid-template-columns:repeat(2,1fr)}.body{padding:24px}.split{grid-template-columns:1fr}}@media(max-width:760px){.side{width:65px;padding:15px 6px}.side .brand{padding:3px 6px 19px}.brand .title,.side .navtitle,.nav .txt,.sidefoot{display:none}.nav{justify-content:center}.top{padding:0 15px}.body{padding:20px 13px}.wizard{grid-template-columns:1fr}.wizardsteps{display:flex;gap:5px;overflow:auto}.wstep{padding:9px}.wstep .stepname{display:none}.gallery{grid-template-columns:repeat(2,1fr)}}@media(max-width:550px){.four,.three,.two,.gallery,.diagcards{grid-template-columns:1fr}.heading{align-items:flex-start;flex-direction:column}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
-<div class="shell"><aside class="side"><div class="brand"><div class="logo">▣</div><div class="title">Devices Simulator<small>Device Hub Pro</small></div></div><div class="navtitle">Workspace</div><div id="sidebar"></div><div class="sidefoot">● <b>Local hub ready</b><br>OS integration experimental<br>v0.3 development preview</div></aside>
+<div class="shell"><aside class="side"><div class="brand"><div class="logo">▣</div><div class="title">Devices SimulatorDevice Hub Pro</small></div></div><div class="navtitle">Workspace</div><div id="sidebar"></div><div class="sidefoot">● <b>Local hub ready</b><br>OS integration experimental<br>v0.3 development preview</div></aside>
 <div class="main"><header class="top"><div><small>Workspace / </small><strong id="breadcrumb">Home</strong></div><div class="row"><span class="pill" id="systemstatus">● Local service</span><button class="btn" id="theme" aria-label="Toggle theme">◐ Theme</button></div></header><main id="page" class="body" aria-live="polite"></main></div></div><div class="toast" id="toast" role="status"></div>
 <script>
 const TOKEN="__HUB_TOKEN__",E=id=>document.getElementById(id);
-const icons={home:"⌂",devices:"▤",wizard:"⊕",jobs:"▧",gallery:"▥",diagnostics:"◉",integration:"⌘",studio:"◇",settings:"⚙",brother:"▣",zebra:"▤",scanner:"▱",barcode:"▥",receipt:"▦",serial:"⌁"};
+const icons={home:"⌂",devices:"▤",wizard:"⊕",jobs:"▧",gallery:"▥",diagnostics:"◉",integration:"⌘",studio:"◇",settings:"⚙",brother:"▣",zebra:"▤",scanner:"▱",barcode:"▥",receipt:"▦",serial:"⌁",scale:"⚖",network_device:"⌘",usb_device:"⊡",ble_device:"ᛒ",rfid:"◈",sensor:"◉"};
 const nav=[["home","Home"],["devices","My Devices"],["wizard","Create Device"],["jobs","Jobs & Queue"],["gallery","Output Gallery"],["diagnostics","Diagnostics"],["integration","System Integration"],["studio","Advanced Studio"],["settings","Settings"]];
-let state={devices:[],jobs:[],presets:{},platform:"Unknown",output_dir:""},route="home",active="",draft={step:0,preset:"brother",name:"Brother Office Printer",tray:"tray-1",saved:""};
+let state={devices:[],jobs:[],presets:{},platform:"Unknown",output_dir:""},route="home",active="",draft={step:0,preset:"brother",name:"Brother Office Printer",tray:"tray-1",model_id:"generic-office",brand:"Generic",transport:"ipp",saved:""},detailEdit=null;
 const clean=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const preset=id=>state.presets[id]||{};
 const badge=(s,t="")=>'<span class="pill '+t+'">'+clean(s)+'</span>';
@@ -30,18 +30,63 @@ function heading(k,t,desc,action=""){return '<div class="heading"><div><div clas
 function showToast(msg,bad=false){const t=E("toast");t.textContent=msg;t.className="toast show"+(bad?" bad":"");setTimeout(()=>t.className="toast",3500)}
 async function post(path,obj){const res=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Devices-Token":TOKEN},body:JSON.stringify(obj)});const json=await res.json();if(!res.ok)throw Error(json.error||"Request failed");return json}
 async function refresh(){const res=await fetch("/api/state",{cache:"no-store"});if(!res.ok)throw Error("Hub is offline");state=await res.json();draw()}
-function goto(name,id=""){route=name;if(id)active=id;draw()}
-function begin(id="brother"){draft={step:0,preset:id,name:preset(id).name||"New Device",tray:"tray-1",saved:""};goto("wizard")}
+function goto(name,id=""){route=name;if(id)active=id;if(name==="detail")detailEdit=null;draw()}
+function begin(id="brother"){const m=initialModel(id);draft={step:0,preset:id,name:preset(id).name||"New Device",tray:"tray-1",model_id:m?.id||"",brand:m?.brand||"Generic",transport:m?.transports?.[0]||"local",saved:""};goto("wizard")}
 function leftnav(){E("sidebar").innerHTML=nav.map(([id,n])=>'<button class="nav '+((route==="detail"?"devices":route)===id?"active":"")+'" data-nav="'+id+'"><i>'+icons[id]+'</i><span class="txt">'+n+'</span></button>').join("")}
-function deviceRow(d){const p=preset(d.preset);return '<div class="item"><div class="ic">'+icons[d.preset]+'</div><div class="grow"><b>'+clean(d.name)+'</b><small>'+clean(p.label)+' · '+clean(d.media)+'</small></div>'+regBadge(d.preset)+button("Manage","detail:"+d.id)+'</div>'}
+function deviceRow(d){const p=preset(d.preset);return '<div class="item"><div class="ic">'+icons[d.preset]+'</div><div class="grow"><b>'+clean(d.name)+'</b><small>'+clean((d.brand?d.brand+' · '+d.model:p.label))+' · '+clean(d.media)+' · '+clean(d.transport||'local')+'</small></div>'+regBadge(d.preset)+button("Manage","detail:"+d.id)+'</div>'}
 function empty(text,desc){return '<div class="empty"><b>'+text+'</b><p>'+desc+'</p>'+button("Create Device","wizard","primary")+'</div>'}
 function registration(id){return state.registrations?.[id]||{status:"unknown",queue:"Not available",details:""}}
-function regBadge(id){const s=registration(id).status;return badge(s==="registered"?"Installed in OS":s==="not_installed"?"Not installed":s==="conflict"?"Name conflict":"Unverified",s==="registered"?"green":"amber")}
+function regBadge(id){if(id!=="brother"&&id!=="zebra")return badge("Profile only","amber");const s=registration(id).status;return badge(s==="registered"?"Installed in OS":s==="not_installed"?"Not installed":s==="conflict"?"Name conflict":"Unverified",s==="registered"?"green":"amber")}
 function installControls(id){const r=registration(id);return '<div class="row wrap mt">'+
 (r.status==="registered"?button("Remove from OS","uninstall:"+id,"danger"):
 button("Install in OS","install:"+id,"primary",r.status==="conflict"||!state.ipp_service_ready))+
 badge(r.status==="registered"?"OS queue verified":r.status==="not_installed"?"Not installed":r.status,""+(r.status==="registered"?"green":"amber"))+
 '</div><p class="small mt">'+clean(r.details||"Requires OS permission and IPP compatibility")+'</p>'}
+
+const modelsByCategory=category=>(state.catalog?.models||[]).filter(m=>m.category===category);
+const catalogModel=id=>(state.catalog?.models||[]).find(m=>m.id===id);
+const initialModel=id=>catalogModel(state.catalog?.default_models?.[id])||modelsByCategory(preset(id).category)[0];
+function modelInputs(){
+ const models=modelsByCategory(preset(draft.preset).category);
+ const brands=[...new Set(models.map(m=>m.brand))].sort();
+ const selected=models.find(m=>m.id===draft.model_id)||models[0];
+ const brand=brands.includes(draft.brand)?draft.brand:selected?.brand;
+ const filtered=models.filter(m=>m.brand===brand);
+ const model=filtered.find(m=>m.id===draft.model_id)||filtered[0];
+ const transports=model?.transports||["local"];
+ const selectedTransport=transports.includes(draft.transport)?draft.transport:transports[0];
+ const transportMeta=state.catalog?.transports||{};
+ return '<div class="grid two mt"><label class="field"><span>Manufacturer / brand</span><select id="model-brand">'+brands.map(b=>'<option value="'+clean(b)+'" '+(b===brand?"selected":"")+'>'+clean(b)+'</option>').join("")+'</select></label>'+
+ '<label class="field"><span>Model</span><select id="model-select">'+filtered.map(m=>'<option value="'+clean(m.id)+'" '+(m.id===model.id?"selected":"")+'>'+clean(m.model)+'</option>').join("")+'</select></label></div>'+
+ '<label class="field"><span>Connection / protocol</span><select id="transport-select">'+transports.map(t=>'<option value="'+clean(t)+'" '+(selectedTransport===t?"selected":"")+'>'+clean(transportMeta[t]?.label||t)+'</option>').join("")+'</select></label>'+
+ '<div class="notice mt"><b>Reference profile only</b>'+clean(model?.note||"")+'<p class="small mt">'+(selectedTransport==="local"?"In-app behavior available where supported.":selectedTransport==="ipp"?"Experimental IPP queue on supported printer fixtures.":"USB/BLE/network/serial hardware is not created yet. This selection is stored as configuration.")+'</p>'+
+ (model?.source?'<a href="'+clean(model.source)+'" target="_blank" rel="noopener noreferrer">Manufacturer / specification ↗</a>':"")+'</div>';
+}
+function modelEditor(d){
+ const models=modelsByCategory(d.category);
+ const selected=models.find(m=>m.id===detailEdit?.model_id)||catalogModel(d.model_id)||models[0];
+ if(!selected)return "";
+ const transports=selected.transports||[];
+ const tr=transports.includes(detailEdit?.transport)?detailEdit.transport:transports[0];
+ return '<div class="card"><h2>Brand, model & connection</h2><p class="muted">Change the reference profile without installing hardware or modifying OS queues.</p>'+
+ '<label class="field"><span>Manufacturer / model</span><select id="detail-model">'+models.map(m=>'<option value="'+clean(m.id)+'" '+(m.id===selected.id?"selected":"")+'>'+clean(m.brand+' · '+m.model)+'</option>').join("")+'</select></label>'+
+ '<label class="field"><span>Connection type</span><select id="detail-transport">'+transports.map(t=>'<option value="'+clean(t)+'" '+(t===tr?"selected":"")+'>'+clean(state.catalog?.transports?.[t]?.label||t)+'</option>').join("")+'</select></label>'+
+ '<div class="notice warn mt"><b>Emulation boundary</b>'+clean(selected.note||"")+'<p class="small mt">This does not enumerate USB hardware, broadcast BLE, or bind a network port.</p></div>'+
+ button("Save model & transport","save-model:"+d.id,"primary")+'</div>';
+}
+function scaleControls(d){
+ if(d.category!=="scale")return "";
+ const m=d.last_measurement;
+ return '<div class="card"><div class="cardhead"><h2>Shipping Scale Test Bench</h2>'+badge("In-app only","green")+'</div>'+
+ '<p class="muted">Send a deterministic simulated reading to the local hub. No physical scale, HID report, BLE indication, or TCP socket is created.</p>'+
+ '<div class="grid two"><label class="field"><span>Gross weight (kg)</span><input id="scale-gross" type="number" min="0" step="0.001" value="1.250"></label>'+
+ '<label class="field"><span>Tare weight (kg)</span><input id="scale-tare" type="number" min="0" step="0.001" value="0.100"></label>'+
+ '<label class="field"><span>Output units</span><select id="scale-unit">'+["kg","lb","g","oz"].map(u=>'<option value="'+u+'" '+(u===(m?.unit||"lb")?"selected":"")+'>'+u+'</option>').join("")+'</select></label>'+
+ '<label class="field"><span>Reading status</span><select id="scale-stable"><option value="true">Stable</option><option value="false">Unstable</option></select></label></div>'+
+ button("Generate scale reading","scale-read:"+d.id,"primary")+
+ (m?'<div class="notice mt"><b>Last reading: '+clean(m.weight)+' '+clean(m.unit)+'</b> · '+clean(m.status)+'<p class="small mt">Net '+clean(m.net_kg)+' kg · Scope: in-app fixture</p></div>':"")+'</div>';
+}
+
 function home(){return heading("DEVICE CONTROL HUB","Welcome to Devices Simulator","Create, configure and test simulated devices without physical hardware.",button("+ Create Device","wizard","primary"))+
 '<div class="stack"><div class="grid four">'+[['Configured devices',state.devices.length,'Saved profiles'],['Captured jobs',state.jobs.filter(x=>x.status==="rendered").length,'Local JPG captures'],['OS printers verified',Object.values(state.registrations||{}).filter(x=>x.status==="registered").length,'Native queue enumeration'],['Local service','Online','Loopback only']].map(([a,b,c])=>'<div class="card metric"><small>'+a+'</small><strong>'+b+'</strong><div class="small">'+c+'</div></div>').join("")+'</div>'+
 '<div class="card"><div class="cardhead"><div><h2>Quick create</h2><div class="small">Choose the type of hardware to simulate</div></div>'+badge("OS support experimental","amber")+'</div><div class="grid three">'+Object.entries(state.presets).map(([id,p])=>'<button class="tile" data-preset="'+id+'"><div class="ic">'+icons[id]+'</div><b>'+clean(p.label)+'</b><small>'+clean(p.capability==="planned"?"Preview only":p.media)+'</small></button>').join("")+'</div></div>'+
@@ -51,14 +96,15 @@ function devices(){return heading("DEVICE LIBRARY","My Devices","Browse profiles
 const steps=["Device Type","Device Profile","Configuration","Behavior","Install in OS","Test & Finish"];
 function wizard(){
 const s=draft.step,p=preset(draft.preset);let body="";
-if(s===0||s===1){body='<h2 class="sectitle">'+(s===0?"Choose your device type":"Select a profile")+'</h2><p class="muted">Choose a compatible profile. Unsupported categories may still be saved as drafts.</p><div class="grid three mt">'+Object.entries(state.presets).filter(([id,v])=>s===0||v.category===p.category).map(([id,v])=>'<button class="choice '+(draft.preset===id?"active":"")+'" data-preset="'+id+'"><div class="ic">'+icons[id]+'</div><b>'+clean(v.label)+'</b><small>'+clean(v.media)+' · '+(v.capability==="planned"?"Planned":"Experimental OS integration")+'</small></button>').join("")+'</div>'}
+if(s===0){body='<h2 class="sectitle">Choose your device type</h2><p class="muted">Create scales, printers, scanners, USB peripherals, BLE devices, network fixtures and more.</p><div class="grid three mt">'+Object.entries(state.presets).map(([id,v])=>'<button class="choice '+(draft.preset===id?"active":"")+'" data-preset="'+id+'"><div class="ic">'+(icons[id]||"▣")+'</div><b>'+clean(v.label)+'</b><small>'+clean(v.media)+' · '+(v.capability==="in_app"?"In-app":v.capability==="planned"?"Profile only":"Experimental")+'</small></button>').join("")+'</div>'}
+if(s===1)body='<h2 class="sectitle">Choose manufacturer, model and connection</h2><p class="muted">Models are protocol references. Selecting USB/BLE/network does not register physical OS hardware.</p>'+modelInputs();
 if(s===2)body='<h2 class="sectitle">Configure '+clean(p.label)+'</h2><p class="muted">Choose a display name and default media source.</p><label class="field"><span>Device name</span><input id="device-name" maxlength="64" value="'+clean(draft.name)+'"></label><div class="grid two"><div class="card"><h3>Media</h3><div class="small">'+clean(p.media)+'</div></div><div class="card"><h3>Resolution</h3><div class="small">'+clean(p.dpi||"Not applicable")+' DPI</div></div></div>'+(draft.preset==="brother"?'<label class="field"><span>Default tray</span><select id="tray"><option value="tray-1" '+(draft.tray==="tray-1"?"selected":"")+'>Tray 1 · Packing slips</option><option value="tray-2" '+(draft.tray==="tray-2"?"selected":"")+'>Tray 2 · Invoices</option></select></label>':"");
-if(s===3)body='<h2 class="sectitle">Simulation behavior</h2><p class="muted">Understand exactly what is functional in this version.</p><div class="grid two mt"><div class="card"><h3>JPG output</h3><p class="small">Each test produces an original document, metadata and JPG pages.</p>'+badge("Available","green")+'</div><div class="card"><h3>Simulated paper faults</h3><p class="small">Offline, paper-out, jam and paused faults can be tested from device settings.</p>'+badge("Planned","amber")+'</div></div><div class="notice mt">Output folder: '+clean(state.output_dir)+'</div>';
-if(s===4)body='<h2 class="sectitle">Install into '+clean(state.platform)+'</h2><p class="muted">Register a printer queue that appears in native Printers & Scanners. OS permission may be required.</p>'+
+if(s===3)body='<h2 class="sectitle">Simulation behavior</h2><p class="muted">Understand exactly what is functional in this version.</p><div class="grid two mt"><div class="card"><h3>JPG output</h3><p class="small">Each test produces an original document, metadata and JPG pages.</p>'+badge("Available","green")+'</div><div class="card"><h3>Simulated faults</h3><p class="small">Printer faults and scale readings can be tested locally.</p>'+badge("Available for supported fixtures","green")+'</div></div><div class="notice mt">Output folder: '+clean(state.output_dir)+'</div>';
+if(s===4)body='<h2 class="sectitle">System integration</h2><p class="muted">Only printer queues offer experimental OS installation. Other connections are saved as profiles, not hardware.</p>'+
 (draft.preset==="brother"||draft.preset==="zebra"?'<div class="card mt"><h3>'+clean(p.label)+'</h3>'+installControls(draft.preset)+'</div><div class="notice warn mt"><b>Experimental IPP driverless installation</b>If CUPS or Windows rejects our IPP capabilities, the failure will be reported and no installed status will be claimed. Printing from the OS must be separately tested.</div>':
-draft.preset==="barcode"?hidControls()+'<div class="notice mt"><b>Different device class</b>Barcode input sends macOS keyboard events instead of installing an HID driver. It will not appear in Printers & Scanners.</div>':'<div class="notice warn mt"><b>Document scanner still planned</b>Native flatbed scanning requires eSCL/AirScan or a compatible document-scanner driver. It is not a HID barcode scanner.</div>')+
-'<div class="card mt"><div class="item">Host operating system: '+clean(state.platform)+'</div><div class="item">IPP service: '+badge(state.ipp_service_ready?"Running":"Offline",state.ipp_service_ready?"green":"amber")+'</div><div class="item">Native scanner: '+badge("Not implemented","amber")+'</div></div>';
-if(s===5)body='<h2 class="sectitle">Review and finish</h2><p class="muted">Save the profile and optionally run an API-only sample capture.</p><div class="card mt"><div class="item"><div class="ic">'+icons[draft.preset]+'</div><div class="grow"><b>'+clean(draft.name)+'</b><small>'+clean(p.label)+' · '+clean(p.media)+'</small></div>'+badge("Draft")+'</div><div class="item">OS installed: '+badge("No","amber")+'</div><div class="item">Sample capture: '+badge(draft.saved?"Ready to test":"Not run","amber")+'</div></div>'+(draft.saved?'<div class="row mt">'+button("Run sample test","test:"+draft.saved,"primary",draft.preset==="barcode"||draft.preset==="receipt"||draft.preset==="serial")+button("View device","detail:"+draft.saved)+'</div>':'<div class="notice mt">Save the profile to enable the test.</div>');
+draft.preset==="barcode"?hidControls()+'<div class="notice mt"><b>Different device class</b>Barcode input sends macOS keyboard events instead of installing an HID driver. It will not appear in Printers & Scanners.</div>':'<div class="notice warn mt"><b>Document scanner still planned</b>USB/BLE/TCP/serial OS device creation is not available. This is a saved model and connection profile; scale readings are available locally.</div>')+
+'<div class="card mt"><div class="item">Model: '+clean(catalogModel(draft.model_id)?.brand||"Generic")+' · '+clean(catalogModel(draft.model_id)?.model||"Fixture")+'</div><div class="item">Connection: '+clean(draft.transport)+'</div><div class="item">Host operating system: '+clean(state.platform)+'</div><div class="item">IPP service: '+badge(state.ipp_service_ready?"Running":"Offline",state.ipp_service_ready?"green":"amber")+'</div><div class="item">Native scanner: '+badge("Not implemented","amber")+'</div></div>';
+if(s===5)body='<h2 class="sectitle">Review and finish</h2><p class="muted">Save the profile and optionally run an API-only sample capture.</p><div class="card mt"><div class="item"><div class="ic">'+icons[draft.preset]+'</div><div class="grow"><b>'+clean(draft.name)+'</b><small>'+clean(p.label)+' · '+clean(p.media)+'</small></div>'+badge("Draft")+'</div><div class="item">OS installed: '+badge("No","amber")+'</div><div class="item">Sample capture: '+badge(draft.saved?"Ready to test":"Not run","amber")+'</div></div>'+(draft.saved?'<div class="row mt">'+button("Run sample test","test:"+draft.saved,"primary",draft.preset!=="brother"&&draft.preset!=="zebra"&&draft.preset!=="scanner")+button("View device","detail:"+draft.saved)+'</div>':'<div class="notice mt">Save the profile to enable the test.</div>');
 return heading("CREATE DEVICE","New virtual device","Six-step guided setup · no OS changes without explicit native installation.")+
 '<div class="wizard"><div class="wizardsteps">'+steps.map((n,i)=>'<div class="wstep '+(i===s?"active":"")+'"><span class="circle">'+(i+1)+'</span><span class="stepname">'+n+'</span></div>').join("")+'</div>'+
 '<div class="card wizardpanel"><div class="wizardcontent"><div class="row between">'+badge("Step "+(s+1)+" of 6")+badge(p.capability==="planned"||p.capability==="preview_only"?"Preview only":"Experimental","amber")+'</div><div class="progress"><div style="width:'+((s+1)/6*100)+'%"></div></div>'+body+'</div>'+
@@ -83,7 +129,7 @@ function hidControls(){
 function detail(){const d=state.devices.find(x=>x.id===active);if(!d)return devices();const p=preset(d.preset),b=d.preset==="brother",z=d.preset==="zebra";return heading("DEVICE MANAGEMENT",d.name,p.label+" · "+p.media,button("Run sample","test:"+d.id,"primary",!b&&!z&&d.preset!=="scanner")+button("Delete profile","remove:"+d.id,"danger"))+
 '<div class="grid split"><div class="stack"><div class="card"><div class="cardhead"><h2>'+(b?"Brother Dual-Tray Configuration":z?"Zebra 4×6 Thermal Configuration":d.preset==="barcode"?"Barcode Input Simulator":"Device Profile Preview")+'</h2>'+badge(p.capability==="planned"?"Planned backend":p.capability==="preview_only"?"In-app preview":"Experimental OS integration","amber")+'</div>'+
 (b?'<div class="grid two">'+[1,2].map(i=>'<div class="tray"><b>Tray '+i+'</b><div class="art">▤</div><div class="small">Letter · '+(i===1?"Packing slips":"Invoices")+'</div>'+badge(d.tray==="tray-"+i?"Current default":"Profile available",d.tray==="tray-"+i?"green":"")+'</div>').join("")+'</div>':z?'<div class="labelart"><b>LULWA SWIM</b>SHIPPING LABEL<br><small>Illustrative preview</small><div class="barcode"></div>4 × 6 in · 203 DPI</div>':'<div class="notice warn">This category is a configuration preview only. No native OS driver is installed.</div>')+'</div>'+
-(d.preset==="barcode"?hidControls():"")+'<div class="card"><h2>Capture a document</h2><p class="muted">Create a test PDF or import an existing PDF/JPG/PNG. JPG output is local.</p><div class="row wrap mt">'+button("Generate Sample","test:"+d.id,"primary",!b&&!z&&d.preset!=="scanner")+(b||z||d.preset==="scanner"?'<label class="btn" style="cursor:pointer">Import Document<input style="display:none" type="file" id="file" data-device="'+clean(d.id)+'" accept=".pdf,.jpg,.jpeg,.png,.zpl"></label>':"")+'</div></div></div>'+
+(d.preset==="barcode"?hidControls():"")+modelEditor(d)+scaleControls(d)+'<div class="card"><h2>Capture a document</h2><p class="muted">Create a test PDF or import an existing PDF/JPG/PNG. JPG output is local.</p><div class="row wrap mt">'+button("Generate Sample","test:"+d.id,"primary",!b&&!z&&d.preset!=="scanner")+(b||z||d.preset==="scanner"?'<label class="btn" style="cursor:pointer">Import Document<input style="display:none" type="file" id="file" data-device="'+clean(d.id)+'" accept=".pdf,.jpg,.jpeg,.png,.zpl"></label>':"")+'</div></div></div>'+
 '<div class="stack"><div class="card"><h2>Installation status</h2><div class="item">Device profile '+badge("Draft")+'</div><div class="item">OS registration '+regBadge(d.preset)+'</div><div class="item">PrintNode '+badge("Not tested","amber")+'</div>'+(b||z?installControls(d.preset)+button("OS Print Test","os-test:"+d.preset,"",registration(d.preset).status!=="registered"||state.platform==="Windows"):"")+button("System Integration","integration")+'</div>'+(b||z?'<div class="card"><h2>Simulation controls</h2><label class="field"><span>Printer condition</span><select id="device-fault">'+["none","offline","paper_out","jam","paused"].map(f=>'<option value="'+f+'" '+((d.fault||"none")===f?"selected":"")+'>'+f.replaceAll("_"," ")+'</option>').join("")+'</select></label>'+(b?'<label class="field"><span>Brother paper source</span><select id="device-tray">'+["tray-1","tray-2"].map(t=>'<option value="'+t+'" '+(d.tray===t?"selected":"")+'>'+t+'</option>').join("")+'</select></label>':"")+button("Save Simulation Settings","save-settings:"+d.id,"primary")+'</div>':"")+'<div class="card"><h2>Settings</h2><div class="item">Media: '+clean(d.media)+'</div><div class="item">DPI: '+clean(d.dpi||"N/A")+'</div><div class="item">Tray: '+clean(b?d.tray:"N/A")+'</div><div class="item">Last API test: '+clean(d.last_test?.status||"Not run")+'</div></div></div></div>'}
 function diagnostics(){return heading("COMMAND CENTER","Diagnostics","Monitoring the real local service, without pretending OS installation was verified.",button("Refresh","refresh"))+
 '<div class="diag"><h2 style="margin:0">Local systems health</h2><div class="diagcards">'+[['Capture engine','Available','PDF/image → JPG'],['OS print queues','Unverified','Native printer list not queried'],['Profiles',state.devices.length,'Persistent local JSON']].map(([a,b,c])=>'<div class="diagcard"><small>'+a+'</small><strong>'+b+'</strong><small>'+c+'</small></div>').join("")+'</div><div class="grid two"><div class="diagcard"><h3>Capability checks</h3>'+[['Hub API','Running'],['JPG capture','Available'],['IPP queues','Experimental'],['ZPL renderer','Partial Code128, text and boxes'],['Scanner/HID','Planned']].map(([a,b])=>'<div class="diagrow"><span>'+a+'</span><b>'+b+'</b></div>').join("")+'</div><div class="diagcard"><h3>Recent captures</h3>'+(state.jobs.length?state.jobs.slice(0,5).map(j=>'<div class="diagrow"><span>'+clean(j.title)+'</span><b>'+clean(j.status)+'</b></div>').join(""):'<p class="small">No captured jobs yet.</p>')+'</div></div></div>'}
@@ -109,13 +155,13 @@ return heading("ADVANCED WORKSPACE","Studio · Shipping Station","Generate packi
 function settings(){return heading("HUB PREFERENCES","Settings","Local output, appearance, and privacy options.")+'<div class="grid two"><div class="card"><h2>Appearance</h2><p class="muted">Change theme without changing system preferences.</p><div class="row mt">'+button("Light","light")+button("Dark","dark")+'</div></div><div class="card"><h2>Output folder</h2><p class="small">'+clean(state.output_dir)+'</p><p class="muted">Set a different root using lulwa-hub --output PATH.</p></div><div class="card"><h2>Privacy</h2><p class="muted">Captures stay local. Customer addresses and labels may contain sensitive information.</p></div><div class="card"><h2>Scope</h2><p class="muted">Native installer, background service and scanner OS support remain planned.</p></div></div>'}
 function draw(){E("sidebar").innerHTML=nav.map(([k,n])=>'<button class="nav '+((route==="detail"?"devices":route)===k?"active":"")+'" data-nav="'+k+'"><i>'+icons[k]+'</i><span class="txt">'+n+'</span></button>').join("");E("breadcrumb").textContent=route==="detail"?"Device Detail":nav.find(([k])=>k===route)?.[1]||"Home";const pages={home,devices,wizard,jobs,gallery,detail,diagnostics,integration,studio,settings};E("page").innerHTML=(pages[route]||home)()}
 async function test(id,file){try{showToast("Rendering sample locally…");let payload={};if(file){if(file.size>25*1024*1024)throw Error("File must be under 25 MB");if(!/\.(pdf|png|jpe?g|zpl)$/i.test(file.name))throw Error("Use PDF, PNG, JPG or ZPL");const bytes=new Uint8Array(await file.arrayBuffer());let b="";for(let i=0;i<bytes.length;i+=8192)b+=String.fromCharCode(...bytes.subarray(i,i+8192));payload={file_base64:btoa(b),title:file.name.slice(0,80)}}const result=await post("/api/devices/"+id+"/test",payload);await refresh();showToast(result.job.status==="rendered"?"Saved "+result.job.images.length+" JPG page(s) · local capture":"Simulated printer error: "+result.job.error,result.job.status!=="rendered");goto(result.job.status==="rendered"?"gallery":"jobs")}catch(e){showToast(e.message,true)}}
-async function save(){try{draft.name=(E("device-name")?.value??draft.name).trim();draft.tray=E("tray")?.value||draft.tray;if(!draft.name)throw Error("Device name is required");if(draft.saved){goto("detail",draft.saved);return}const result=await post("/api/devices",{preset:draft.preset,name:draft.name,tray:draft.tray});draft.saved=result.device.id;await refresh();showToast("Profile saved · no OS queue installed");if(draft.step<5){draft.step=5;draw()}else goto("detail",draft.saved)}catch(e){showToast(e.message,true)}}
+async function save(){try{draft.name=(E("device-name")?.value??draft.name).trim();draft.tray=E("tray")?.value||draft.tray;if(!draft.name)throw Error("Device name is required");if(draft.saved){goto("detail",draft.saved);return}const result=await post("/api/devices",{preset:draft.preset,name:draft.name,tray:draft.tray,model_id:draft.model_id,transport:draft.transport});draft.saved=result.device.id;await refresh();showToast("Profile saved · no OS queue installed");if(draft.step<5){draft.step=5;draw()}else goto("detail",draft.saved)}catch(e){showToast(e.message,true)}}
 document.addEventListener("click",async event=>{
 const n=event.target.closest("[data-nav]");if(n){n.dataset.nav==="wizard"?begin():goto(n.dataset.nav);return}
-const p=event.target.closest("[data-preset]");if(p){const id=p.dataset.preset;draft.preset=id;draft.name=preset(id).name;draft.saved="";if(route!=="wizard")begin(id);else draw();return}
+const p=event.target.closest("[data-preset]");if(p){const id=p.dataset.preset,m=initialModel(id);draft.preset=id;draft.name=preset(id).name;draft.model_id=m?.id||"";draft.brand=m?.brand||"Generic";draft.transport=m?.transports?.[0]||"local";draft.saved="";if(route!=="wizard")begin(id);else draw();return}
 const a=event.target.closest("[data-action]");if(!a)return;const k=a.dataset.action;
 if(k==="wizard")return begin();if(nav.some(([id])=>id===k))return goto(k);
-if(k==="next"){if(draft.step===2){draft.name=E("device-name")?.value.trim()||"";draft.tray=E("tray")?.value||draft.tray;if(!draft.name){showToast("Device name required",true);return}}draft.step=Math.min(5,draft.step+1);return draw()}
+if(k==="next"){if(draft.step===1){if(!catalogModel(draft.model_id)){showToast("Choose a valid model",true);return}}if(draft.step===2){draft.name=E("device-name")?.value.trim()||"";draft.tray=E("tray")?.value||draft.tray;if(!draft.name){showToast("Device name required",true);return}}draft.step=Math.min(5,draft.step+1);return draw()}
 if(k==="back"){draft.step=Math.max(0,draft.step-1);return draw()}
 if(k==="save")return save();if(k==="refresh")return refresh().then(()=>showToast("Hub refreshed"));
 if(k==="hid-start"||k==="hid-stop"||k==="hid-scan"){
@@ -155,12 +201,51 @@ if(k.startsWith("os-test:")){
     await refresh();showToast("OS roundtrip verified: "+response.verification.count+" JPG(s)");goto("gallery")}
   catch(error){showToast(error.message,true)}return;
 }
-if(k.startsWith("detail:"))return goto("detail",k.slice(7));if(k.startsWith("test:"))return test(k.slice(5));
+if(k.startsWith("detail:"))return goto("detail",k.slice(7));
+if(k.startsWith("save-model:")){
+ const id=k.slice("save-model:".length);
+ const d=state.devices.find(x=>x.id===id);if(!d)return;
+ const model_id=detailEdit?.model_id||d.model_id||state.catalog?.default_models?.[d.preset];
+ const model=catalogModel(model_id);
+ const transport=detailEdit?.transport||d.transport||model?.transports?.[0];
+ try{await post("/api/devices/"+id+"/model",{model_id,transport});await refresh();goto("detail",id);showToast("Model and connection saved as a reference profile")}
+ catch(e){showToast(e.message,true)}return;
+}
+if(k.startsWith("scale-read:")){
+ const id=k.slice("scale-read:".length);
+ try{const result=await post("/api/devices/"+id+"/scale-reading",{
+   gross_kg:Number(E("scale-gross")?.value),
+   tare_kg:Number(E("scale-tare")?.value),
+   unit:E("scale-unit")?.value||"kg",
+   stable:E("scale-stable")?.value==="true"
+ });await refresh();goto("detail",id);
+ showToast("Fixture reading: "+result.reading.weight+" "+result.reading.unit+" ("+result.reading.status+")")}
+ catch(e){showToast(e.message,true)}return;
+}
+if(k.startsWith("test:"))return test(k.slice(5));
 if(k.startsWith("remove:")){const id=k.slice(7);if(!confirm("Remove this profile? Captured JPGs and OS queues are not deleted."))return;try{await post("/api/devices/"+id,{action:"remove_profile"});await refresh();goto("devices");showToast("Profile removed")}catch(e){showToast(e.message,true)}return}
 if(k==="light"||k==="dark"){document.body.classList.toggle("dark",k==="dark");localStorage.setItem("devicehub-theme",k);return}
 });
 document.addEventListener("input",e=>{if(e.target.id==="device-name")draft.name=e.target.value});
-document.addEventListener("change",e=>{if(e.target.id==="tray")draft.tray=e.target.value;if(e.target.id==="file"&&e.target.files?.[0])test(e.target.dataset.device,e.target.files[0])});
+document.addEventListener("change",e=>{
+ const el=e.target,id=el.id,v=el.value;
+ if(id==="tray")draft.tray=v;
+ if(id==="model-brand"){
+   draft.brand=v;const m=modelsByCategory(preset(draft.preset).category).find(m=>m.brand===v);
+   if(m){draft.model_id=m.id;draft.transport=m.transports[0];draft.name=m.brand+" "+m.model}
+   draw();return;
+ }
+ if(id==="model-select"){
+   const m=catalogModel(v);if(m){draft.model_id=m.id;draft.brand=m.brand;draft.transport=m.transports[0];draft.name=m.brand+" "+m.model}
+   draw();return;
+ }
+ if(id==="transport-select"){draft.transport=v;return}
+ if(id==="detail-model"){
+   const m=catalogModel(v);if(m){detailEdit={model_id:m.id,transport:m.transports[0]};draw()}return;
+ }
+ if(id==="detail-transport"){if(!detailEdit){const d=state.devices.find(x=>x.id===active);detailEdit={model_id:d?.model_id||state.catalog?.default_models?.[d?.preset],transport:v}}else detailEdit.transport=v;return}
+ if(id==="file"&&el.files?.[0])test(el.dataset.device,el.files[0]);
+});
 E("theme").addEventListener("click",()=>{document.body.classList.toggle("dark");localStorage.setItem("devicehub-theme",document.body.classList.contains("dark")?"dark":"light")});
 if(localStorage.getItem("devicehub-theme")==="dark")document.body.classList.add("dark");
 refresh().catch(e=>E("page").innerHTML='<div class="notice warn">Unable to connect: '+clean(e.message)+'</div>');

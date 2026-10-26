@@ -47,6 +47,16 @@ Software teams building commerce, shipping, POS and internal operations systems 
 
 <div align="center"><img src="docs/assets/device-preview.svg" alt="Illustration showing simulated Brother-style dual trays and a Zebra-style 4 × 6 label" width="94%"></div>
 
+## Device catalog: scales, BLE, USB & network peripherals
+
+Devices Simulator now supports saved manufacturer/model/transport profiles across office and label printers, shipping scales, barcode scanners, document scanners, receipt printers, serial devices, BLE devices, USB peripherals, network devices, RFID readers and sensors.
+
+In **Create Device**, pick a category → brand → model → connection. Each catalog profile only offers transports appropriate to that reference model. You can change a saved profile in **My Devices**.
+
+**Shipping scale test bench (v0.7):** Generate local weight readings with gross weight, tare, kg/lb/g/oz output, stable/unstable state and over-capacity behavior. This is a *working in-app fixture*, not an installed DYMO/METTLER TOLEDO USB or Bluetooth device. USB, BLE and network selections are saved configurations until their adapters are implemented.
+
+Read the **[Device catalog and transport architecture](docs/DEVICE_CATALOG_PROTOCOLS.md)** for researched models, official manufacturer sources and the native transport roadmap.
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

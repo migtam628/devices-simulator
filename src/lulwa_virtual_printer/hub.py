@@ -10,6 +10,7 @@ import base64
 import binascii
 import json
 import logging
+import math
 import platform
 import secrets
 import threading
@@ -24,11 +25,12 @@ from .engine import PROFILES, capture
 from .native_printers import get_registration, install_printer, uninstall_printer, service_ready, PORT
 from .hid_barcode import MacBarcodeHID
 from .os_print_test import verify_print_roundtrip
+from .device_catalog import public_catalog, select_model
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 35 * 1024 * 1024
 MAX_FILE = 25 * 1024 * 1024
-CATEGORIES = ("office_printer", "label_printer", "scanner", "barcode", "receipt", "serial")
+CATEGORIES = ("office_printer", "label_printer", "scanner", "barcode", "receipt", "serial", "scale", "network_device", "usb_device", "ble_device", "rfid", "sensor")
 PRESETS = {
     "brother": {"category": "office_printer", "label": "Brother Dual Tray", "name": "Brother Office Printer", "dpi": 300, "media": "Letter · 8.5 × 11 in", "profiles": ["brother-tray1", "brother-tray2"], "capability": "experimental"},
     "zebra": {"category": "label_printer", "label": "Zebra 4×6 Thermal", "name": "Zebra 4×6 Label Printer", "dpi": 203, "media": "Label · 4 × 6 in", "profiles": ["zebra"], "capability": "experimental"},
@@ -36,6 +38,12 @@ PRESETS = {
     "barcode": {"category": "barcode", "label": "Barcode Input Simulator", "name": "Simulated Barcode Input", "dpi": None, "media": "Keyboard events · macOS", "profiles": [], "capability": "experimental"},
     "receipt": {"category": "receipt", "label": "Receipt Printer", "name": "Virtual Receipt Printer", "dpi": 203, "media": "80 mm roll", "profiles": [], "capability": "planned"},
     "serial": {"category": "serial", "label": "Serial / COM Device", "name": "Virtual Serial Device", "dpi": None, "media": "PTY / COM", "profiles": [], "capability": "planned"},
+    "scale": {"category": "scale", "label": "Shipping / Postal Scale", "name": "Simulated Shipping Scale", "dpi": None, "media": "Weight · kg / lb", "profiles": [], "capability": "in_app"},
+    "network_device": {"category": "network_device", "label": "Network / Ethernet Device", "name": "Network Device Fixture", "dpi": None, "media": "TCP/IP endpoint profile", "profiles": [], "capability": "planned"},
+    "usb_device": {"category": "usb_device", "label": "USB Device", "name": "USB Peripheral Fixture", "dpi": None, "media": "USB interface profile", "profiles": [], "capability": "planned"},
+    "ble_device": {"category": "ble_device", "label": "BLE Device", "name": "Bluetooth LE Fixture", "dpi": None, "media": "GATT profile", "profiles": [], "capability": "planned"},
+    "rfid": {"category": "rfid", "label": "RFID Reader", "name": "RFID Reader Fixture", "dpi": None, "media": "RFID input profile", "profiles": [], "capability": "planned"},
+    "sensor": {"category": "sensor", "label": "Sensor / Telemetry", "name": "Sensor Fixture", "dpi": None, "media": "Telemetry profile", "profiles": [], "capability": "planned"},
 }
 
 
@@ -82,6 +90,7 @@ class HubStore:
         if not 1 <= len(name) <= 64 or any(ord(c) < 32 for c in name):
             raise ValueError("Name must be 1–64 printable characters")
         config = PRESETS[preset]
+        model, transport = select_model(preset, config["category"], data.get("model_id"), data.get("transport"))
         with self.lock:
             state = self._read()
             if any(d["name"].casefold() == name.casefold() for d in state["devices"]):
@@ -89,6 +98,9 @@ class HubStore:
             obj = {
                 "id": str(uuid.uuid4()), "preset": preset, "category": config["category"],
                 "name": name, "media": config["media"], "dpi": config["dpi"],
+                "model_id": model["id"], "brand": model["brand"], "model": model["model"],
+                "transport": transport, "transport_status": "profile_only",
+                "last_measurement": None,
                 "tray": data.get("tray") if data.get("tray") in ("tray-1", "tray-2") else "tray-1",
                 "output_format": "jpg", "delay_ms": 0, "fault": "none",
                 "lifecycle": "draft", "os_status": "not_verified",
@@ -97,6 +109,70 @@ class HubStore:
             state["devices"].append(obj)
             self._write(state)
             return obj
+
+
+    def update_model(self, device_id: str, data: dict) -> dict:
+        """Update fixture metadata only, never OS queues or USB/BLE devices."""
+        with self.lock:
+            state = self._read()
+            for d in state["devices"]:
+                if d["id"] == device_id:
+                    model, transport = select_model(d["preset"], d["category"],
+                                                    data.get("model_id"), data.get("transport"))
+                    d.update(model_id=model["id"], brand=model["brand"], model=model["model"],
+                             transport=transport, transport_status="profile_only",
+                             os_status="not_verified", last_measurement=None)
+                    self._write(state)
+                    return d
+        raise LookupError("Device not found")
+
+    def simulate_scale_reading(self, device_id: str, data: dict) -> dict:
+        """A local reading fixture, not real USB, BLE, TCP or certified measurement."""
+        with self.lock:
+            state = self._read()
+            for d in state["devices"]:
+                if d["id"] != device_id:
+                    continue
+                if d["category"] != "scale":
+                    raise ValueError("Weight readings are only available on scale profiles")
+                model, _ = select_model(d["preset"], d["category"],
+                                        d.get("model_id"), d.get("transport"))
+                try:
+                    gross = float(data.get("gross_kg", 0))
+                    tare = float(data.get("tare_kg", 0))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("Weight and tare must be numbers") from exc
+                if not (math.isfinite(gross) and math.isfinite(tare) and
+                        0 <= gross <= 10000 and 0 <= tare <= gross):
+                    raise ValueError("Use finite nonnegative kg values; tare must not exceed gross")
+                unit = data.get("unit", "kg")
+                if unit not in ("kg", "lb", "g", "oz"):
+                    raise ValueError("Unsupported scale unit; choose kg, lb, g or oz")
+                stable = data.get("stable", True)
+                if type(stable) is not bool:
+                    raise ValueError("Stable must be a boolean")
+                capacity = float(model.get("max_kg", 10000))
+                overloaded = gross > capacity
+                net = round(gross - tare, 4)
+                factor = {"kg": 1.0, "lb": 2.2046226218, "g": 1000.0,
+                          "oz": 35.27396195}[unit]
+                reading = {
+                    "device_id": device_id, "model_id": model["id"],
+                    "brand": model["brand"], "model": model["model"],
+                    "transport": d["transport"], "transport_status": "not_connected",
+                    "scope": "in_app_scale_fixture", "gross_kg": round(gross, 4),
+                    "tare_kg": round(tare, 4), "net_kg": net,
+                    "weight": round(net * factor, 3), "unit": unit,
+                    "stable": stable and not overloaded,
+                    "status": "over_capacity" if overloaded else ("stable" if stable else "unstable"),
+                    "max_kg": capacity, "at": timestamp()
+                }
+                d["last_measurement"] = reading
+                d["last_test"] = {"status": reading["status"], "at": reading["at"],
+                                  "scope": "in_app_scale_fixture"}
+                self._write(state)
+                return reading
+        raise LookupError("Device not found")
 
     def remove_device(self, device_id: str) -> bool:
         with self.lock:
@@ -243,9 +319,12 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
                 return self.send(200, {
                     "devices": devices, "jobs": store.list_jobs(), "registrations": registrations,
                     "ipp_service_ready": service_ready(), "hid": hid.state(),
-                    "presets": PRESETS, "platform": platform.system(), "output_dir": str(store.output_dir),
+                    "presets": PRESETS, "catalog": public_catalog(),
+                    "platform": platform.system(), "output_dir": str(store.output_dir),
                     "service": "local", "os_install_supported": platform.system() in ("Darwin", "Linux", "Windows"),
                 })
+            if path == "/api/catalog":
+                return self.send(200, public_catalog())
             if path == "/api/healthz":
                 return self.send(200, {"status": "ok", "engine": "available",
                                        "ipp_service_ready": service_ready()})
@@ -312,6 +391,10 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID):
                     return self.send(200 if result["success"] else 409, {"registration": result,
                                 "error": result.get("error", "")})
                 parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "model":
+                    return self.send(200, {"device": store.update_model(parts[2], payload)})
+                if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "scale-reading":
+                    return self.send(200, {"reading": store.simulate_scale_reading(parts[2], payload)})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "settings":
                     return self.send(200, {"device": store.configure_device(parts[2], payload)})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "test":
