@@ -55,7 +55,8 @@ def render_job(data: bytes, dpi: int, fmt: str | None = None) -> list[Image.Imag
     if fmt == "postscript":
         raise ValueError("PostScript input requires conversion to PDF first (ps2pdf).")
     if fmt == "zpl":
-        raise ValueError("ZPL capture is preserved, but JPG rendering requires a local ZPL renderer (not in v0.1).")
+        from .zpl_renderer import render_zpl
+        return [render_zpl(data, dpi)]
     raise ValueError(f"Unsupported format: {fmt}")
 
 
