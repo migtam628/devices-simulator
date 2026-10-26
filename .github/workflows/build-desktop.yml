@@ -1,0 +1,93 @@
+name: Build desktop executables
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'packaging/**'
+      - 'pyproject.toml'
+      - '.github/workflows/build-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            label: Windows x64
+            artifact: DevicesSimulator-Windows-x64
+            desktop: true
+          - runner: macos-15
+            label: macOS Apple Silicon
+            artifact: DevicesSimulator-macOS-arm64
+            desktop: true
+          - runner: macos-15-intel
+            label: macOS Intel
+            artifact: DevicesSimulator-macOS-x64
+            desktop: true
+          - runner: ubuntu-22.04
+            label: Linux x64
+            artifact: DevicesSimulator-Linux-x64
+            desktop: false
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install desktop and packaging requirements
+        if: matrix.desktop
+        run: python -m pip install -e '.[desktop,test]' 'pyinstaller>=6.12,<7'
+
+      - name: Install Linux and packaging requirements
+        if: ${{ !matrix.desktop }}
+        run: python -m pip install -e '.[test]' 'pyinstaller>=6.12,<7'
+
+      - name: Run unit and integration tests
+        run: python -m pytest -q
+
+      - name: Build OS-native executable
+        run: python packaging/build.py
+
+      - name: Smoke test frozen executable
+        run: python packaging/smoke.py
+
+      - name: Upload executable archive and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  manifest:
+    name: Build summary
+    if: always()
+    needs: package
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Summarize result
+        env:
+          MATRIX_RESULT: ${{ needs.package.result }}
+        run: |
+          echo '## Devices Simulator desktop build' >> "$GITHUB_STEP_SUMMARY"
+          echo "Matrix result: **${MATRIX_RESULT}**" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Download the platform-specific archives from the Artifacts section.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Windows/macOS packages are unsigned. Linux runs the UI in a default browser.' >> "$GITHUB_STEP_SUMMARY"

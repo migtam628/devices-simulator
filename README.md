@@ -2,7 +2,15 @@
 
 Prototype operating-system IPP print queues and virtual-printer capture engine for testing Lulwa Swim fulfillment documents. Supports Brother Tray 1, Brother Tray 2, and Zebra 4x6 profiles. Converts incoming PDF, JPG or PNG documents into saved JPG files. Raw ZPL is **archived but not rendered**.
 
-> **Current state:** Local IPP printer endpoints and cross-platform system queue registration scripts are included. IPP protocol tests pass, but real Windows/macOS/Linux installation and print-dialog support are **unverified and experimental**. Not IPP Everywhere, Mopria, or AirPrint certified. Scanner device installation, PWG Raster, ZPL rendering, a GUI and PrintNode integration are not implemented.
+> **Current state:** Local IPP printer endpoints and cross-platform system queue registration scripts are included. IPP protocol tests pass, but real Windows/macOS/Linux installation and print-dialog support are **unverified and experimental**. Not IPP Everywhere, Mopria, or AirPrint certified. Scanner device installation, PWG Raster, ZPL rendering and PrintNode integration are not implemented. A local hub GUI exists, with experimental operating-system printer registration.
+
+## Download desktop executables (GitHub Actions)
+
+The project now builds portable **Windows EXE**, **macOS .app (Apple Silicon and Intel)**, and **Linux x64** executable archives. No Python installation is required on the end user's machine.
+
+**[Download OS builds from GitHub Actions](https://github.com/migtam628/devices-simulator/actions/workflows/build-desktop.yml)** · [Installation and build instructions](docs/DESKTOP_BUILDS.md)
+
+**Note:** These are unsigned development builds. Linux opens a local browser UI. Native OS printer registration is still experimental; executable packaging alone does not install a guaranteed-working OS printer or scanner.
 
 ## New in v0.4 — Native printer installation
 
