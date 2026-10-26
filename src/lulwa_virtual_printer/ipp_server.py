@@ -9,6 +9,8 @@ import argparse
 import json
 import logging
 import threading
+from collections import deque
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -39,7 +41,7 @@ def printer_attributes(key: str, uri: str):
         (KEYWORD, 'uri-authentication-supported', 'none'),
         (KEYWORD, 'uri-security-supported', 'none'),
         (KEYWORD, 'ipp-versions-supported', ['1.1', '2.0']),
-        (ENUM, 'operations-supported', [0x0002, 0x0004, 0x0008, 0x0009, 0x000A, 0x000B]),
+        (ENUM, 'operations-supported', [0x0002, 0x0004, 0x0005, 0x0006, 0x0008, 0x0009, 0x000A, 0x000B]),
         (KEYWORD, 'charset-supported', 'utf-8'),
         (LANGUAGE, 'generated-natural-language-supported', 'en-us'),
         (ENUM, 'printer-state', 3),
@@ -76,15 +78,57 @@ def job_attributes(job: dict, printer_uri: str):
         (URI, 'job-uri', f'{printer_uri}/jobs/{jid}'),
         (NAME, 'job-name', job['name']),
         (ENUM, 'job-state', job['state']),
-        (KEYWORD, 'job-state-reasons', 'none' if job['state'] == 9 else 'job-aborted-by-system'),
+        (KEYWORD, 'job-state-reasons', 'job-aborted-by-system' if job['state'] == 8 else 'none'),
         (INTEGER, 'job-impressions-completed', len(job.get('images', []))),
     ]
 
 def create_handler(output: str | Path):
     output = Path(output).expanduser().resolve()
     jobs: dict[int, dict] = {}
+    events = deque(maxlen=50)
     counter = [0]
     lock = threading.RLock()
+
+    def new_job(name: str) -> dict:
+        with lock:
+            counter[0] += 1
+            jid = counter[0]
+            job = {'job_id': jid, 'name': name, 'state': 3, 'images': [], 'directory': ''}
+            jobs[jid] = job
+            return job
+
+    def record_event(operation: int, status: int, fmt: str | None, job_id=None,
+                     capture_status=None, detail=None):
+        # Log metadata only; never include printed document or shipping details.
+        with lock:
+            events.append({'at': datetime.now(timezone.utc).isoformat(),
+                           'operation': f'0x{operation:04x}', 'ipp_status': f'0x{status:04x}',
+                           'document_format': fmt, 'job_id': job_id,
+                           'capture_status': capture_status,
+                           'detail': str(detail)[:180] if detail else None})
+
+    def render_into_job(job, document: bytes, key: str, fmt: str | None, request):
+        if fmt not in ('application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream'):
+            job['state'] = 8
+            return 0x040A, 'Unsupported document-format: ' + str(fmt)
+        if not document:
+            job['state'] = 8
+            return 0x0400, 'Missing document payload'
+        profile = PRINTERS[key][1]
+        if key == 'brother' and request.first('media-source', 'tray-1') == 'tray-2':
+            profile = 'brother-tray2'
+        try:
+            result = capture(document, profile, output, job['name'])
+            job.update(state=9 if result['status'] == 'rendered' else 8,
+                       images=result['images'], directory=result['directory'])
+            if job['state'] != 9:
+                return 0x0500, result.get('error') or 'Renderer did not produce JPG'
+            return 0x0000, None
+        except (OSError, ValueError) as exc:
+            job['state'] = 8
+            LOGGER.warning('IPP capture failed: %s', exc)
+            return 0x0500, str(exc)
+
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
@@ -102,6 +146,10 @@ def create_handler(output: str | Path):
             self.wfile.write(data)
 
         def do_GET(self):
+            if urlparse(self.path).path == '/diagnostics':
+                with lock:
+                    payload = json.dumps({'events': list(events), 'jobs_seen': len(jobs)}).encode()
+                return self.send_bytes(payload, 'application/json')
             if urlparse(self.path).path == '/healthz':
                 data = json.dumps({'status': 'ok', 'printers': list(PRINTERS), 'mode': 'experimental'}).encode()
                 return self.send_bytes(data, 'application/json')
@@ -136,38 +184,42 @@ def create_handler(output: str | Path):
                 if asked and 'all' not in asked and 'printer-description' not in asked and 'printer-defaults' not in asked:
                     attrs = [a for a in attrs if a[1] in asked]
             elif op == 0x0004:
+                # Validate-Job: check format without claiming a print occurred.
                 fmt = request.first('document-format', 'application/pdf')
-                if fmt not in ('application/pdf', 'image/jpeg', 'image/png'):
+                if fmt not in ('application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream'):
                     status = 0x040A
-            elif op == 0x0002:
-                fmt = request.first('document-format', 'application/pdf')
-                if fmt not in ('application/pdf', 'image/jpeg', 'image/png'):
-                    status = 0x040A
-                elif not request.document:
-                    status = 0x0400
-                else:
-                    profile = PRINTERS[key][1]
-                    if key == 'brother':
-                        source = request.first('media-source', 'tray-1')
-                        if source == 'tray-2':
-                            profile = 'brother-tray2'
-                    title = str(request.first('job-name', 'IPP print'))[:128]
-                    with lock:
-                        counter[0] += 1
-                        jid = counter[0]
+            elif op == 0x0005:
+                # Create-Job: client reserves a job ID; document arrives via Send-Document.
+                title = str(request.first('job-name', 'IPP print'))[:128]
+                job = new_job(title)
+                out = job_attributes(job, uri)
+                record_event(op, 0, request.first('document-format'), job['job_id'], 'awaiting_document')
+            elif op in (0x0002, 0x0006):
+                # Print-Job sends bytes with job; Send-Document completes Create-Job.
+                fmt = request.first('document-format', 'application/octet-stream')
+                if op == 0x0006:
                     try:
-                        result = capture(request.document, profile, output, title)
-                        state = 9 if result['status'] == 'rendered' else 8
-                        record = {'job_id': jid, 'name': title, 'state': state,
-                                  'images': result['images'], 'directory': result['directory']}
-                        with lock:
-                            jobs[jid] = record
-                        out = job_attributes(record, uri)
-                        if state != 9:
-                            status = 0x0500
-                    except (OSError, ValueError) as exc:
-                        LOGGER.warning('IPP capture error: %s', exc)
-                        status = 0x0500
+                        jid = int(request.first('job-id', 0))
+                    except (ValueError, TypeError):
+                        jid = 0
+                    with lock:
+                        job = jobs.get(jid)
+                    if not job:
+                        status = 0x0406
+                        record_event(op, status, fmt, jid, detail='Unknown IPP job ID')
+                    elif job['state'] != 3:
+                        status = 0x0400
+                        record_event(op, status, fmt, jid, detail='IPP job already completed')
+                    else:
+                        status, detail = render_into_job(job, request.document, key, fmt, request)
+                        out = job_attributes(job, uri)
+                        record_event(op, status, fmt, jid, 'rendered' if status == 0 else 'failed', detail)
+                else:
+                    title = str(request.first('job-name', 'IPP print'))[:128]
+                    job = new_job(title)
+                    status, detail = render_into_job(job, request.document, key, fmt, request)
+                    out = job_attributes(job, uri)
+                    record_event(op, status, fmt, job['job_id'], 'rendered' if status == 0 else 'failed', detail)
             elif op == 0x0009:
                 jid = request.first('job-id')
                 with lock:
@@ -177,11 +229,16 @@ def create_handler(output: str | Path):
                 else:
                     status = 0x0406
             elif op == 0x000A:
-                pass
+                # Get-Jobs: provide latest job details as a minimal IPP subset.
+                with lock:
+                    latest = next(reversed(jobs.values()), None) if jobs else None
+                if latest:
+                    out = job_attributes(latest, uri)
             elif op == 0x0008:
                 status = 0x0405
             else:
                 status = 0x0501
+                record_event(op, status, None, detail='Unsupported IPP operation')
             return self.send_bytes(response(request, status, printer_attrs=attrs, job_attrs=out), 'application/ipp')
     return Handler
 
