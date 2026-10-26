@@ -64,7 +64,10 @@ def test_landing_page_concept_hybrid():
     assert "native scanner driver" in page.lower()
     assert "not a virtual hid" in page.lower()
     assert "github.com/migtam628/devices-simulator/releases" in page
-    assert "data-os" in page and "releases/download/v0.6.1/" in page
+    import re
+    package = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    version = re.search(r'^version = "([^"]+)"', package, re.MULTILINE).group(1)
+    assert "data-os" in page and f"releases/download/v{version}/" in page
     assert "@media(max-width:780px)" in styles
     assert "@media(max-width:485px)" in styles
     assert "mobile-menu" in script and "os-recommendation" in script
