@@ -104,10 +104,20 @@ def verify_print_roundtrip(preset: str, output: str | Path, *,
     def inspect_ipp():
         try:
             with urlopen("http://127.0.0.1:8631/diagnostics", timeout=2) as resp:
-                events = json.load(resp).get("events", [])
-            relevant = [x for x in events if x.get("operation") in ("0x0002", "0x0005", "0x0006")]
-            return (", ".join(f"{x.get('operation')}:{x.get('ipp_status')}:{x.get('capture_status') or '-'}"
-                              for x in relevant[-4:]) or "no IPP print requests received")
+                diagnostics = json.load(resp)
+            events = diagnostics.get("events", [])
+            relevant = [x for x in events if x.get("operation") in
+                        ("0x0000", "0x0002", "0x0005", "0x0006", "0x0009")]
+            trace = ", ".join(
+                f"{x.get('operation')}:{x.get('ipp_status')}:{x.get('capture_status') or '-'}"
+                + (":" + str(x.get("detail"))[:70] if x.get("detail") else "")
+                for x in relevant[-6:]
+            )
+            pending = [j.get("job_id") for j in diagnostics.get("jobs", [])
+                       if j.get("state") in (3, 4, 5)]
+            if pending:
+                trace += f" Pending IPP jobs: {pending[-5:]}"
+            return trace or "no IPP print requests received"
         except Exception:
             return "IPP diagnostics unavailable"
 
@@ -116,5 +126,5 @@ def verify_print_roundtrip(preset: str, output: str | Path, *,
         hints.append("Renderer result: " + str(last_error)[:160])
     hints.append("IPP activity: " + inspect_ipp())
     hints.append("CUPS queue: " + inspect_queue())
-    hints.append("Check the output directory and restart the latest simulator before retrying.")
+    hints.append("If the printer is stuck in macOS, cancel the stalled job and retry after installing the updated app. Do not treat CUPS acceptance as successful output.")
     raise RuntimeError(" ".join(hints))

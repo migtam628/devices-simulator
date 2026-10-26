@@ -30,6 +30,62 @@ PRINTERS = {
     'zebra': ('Lulwa SIM Zebra 4x6 Label', 'zebra', 203, 'na_index-4x6_4x6in'),
 }
 
+
+def read_ipp_http_body(stream, headers, max_bytes=MAX_IPP_SIZE):
+    """Read bounded IPP requests in either HTTP Content-Length or chunked form.
+
+    RFC 2910 section 3.5 requires IPP servers to accept HTTP chunked request
+    bodies. macOS/CUPS can stream print data without a Content-Length.
+    Reject ambiguous framing to avoid persistent-connection request smuggling.
+    """
+    transfer = headers.get('Transfer-Encoding', '').strip().lower()
+    length = headers.get('Content-Length')
+    if transfer:
+        if transfer != 'chunked' or length is not None:
+            raise ValueError('Unsupported or ambiguous HTTP body framing')
+        data = bytearray()
+        trailer_size = 0
+        while True:
+            line = stream.readline(128)
+            if not line.endswith(b'\r\n'):
+                raise ValueError('Invalid HTTP chunk header')
+            size_text = line[:-2].split(b';', 1)[0].strip()
+            if not size_text or len(size_text) > 16:
+                raise ValueError('Invalid HTTP chunk length')
+            try:
+                size = int(size_text, 16)
+            except ValueError as exc:
+                raise ValueError('Invalid HTTP chunk length') from exc
+            if size > max_bytes - len(data):
+                raise OverflowError('Print job exceeds IPP size limit')
+            if size == 0:
+                while True:
+                    trailer = stream.readline(8192)
+                    trailer_size += len(trailer)
+                    if trailer_size > 8192 or not trailer.endswith(b'\r\n'):
+                        raise ValueError('Invalid HTTP chunk trailer')
+                    if trailer == b'\r\n':
+                        return bytes(data)
+            payload = stream.read(size)
+            if len(payload) != size or stream.read(2) != b'\r\n':
+                raise ValueError('Truncated HTTP chunk')
+            data.extend(payload)
+
+    if length is None:
+        raise ValueError('Content-Length or chunked Transfer-Encoding required')
+    try:
+        count = int(length)
+    except (ValueError, OverflowError) as exc:
+        raise ValueError('Invalid Content-Length') from exc
+    if count < 0:
+        raise ValueError('Negative Content-Length')
+    if count > max_bytes:
+        raise OverflowError('Print job exceeds IPP size limit')
+    payload = stream.read(count)
+    if len(payload) != count:
+        raise ValueError('Truncated IPP request body')
+    return payload
+
 def printer_attributes(key: str, uri: str):
     name, _, dpi, media = PRINTERS[key]
     entries = [
@@ -78,7 +134,7 @@ def job_attributes(job: dict, printer_uri: str):
         (URI, 'job-uri', f'{printer_uri}/jobs/{jid}'),
         (NAME, 'job-name', job['name']),
         (ENUM, 'job-state', job['state']),
-        (KEYWORD, 'job-state-reasons', 'job-aborted-by-system' if job['state'] == 8 else 'none'),
+        (KEYWORD, 'job-state-reasons', 'job-aborted-by-system' if job['state'] == 8 else 'job-completed-successfully' if job['state'] == 9 else 'none'),
         (INTEGER, 'job-impressions-completed', len(job.get('images', []))),
     ]
 
@@ -132,7 +188,7 @@ def create_handler(output: str | Path):
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
-        server_version = 'DevicesSimulatorIPP/0.6.1-experimental'
+        server_version = 'DevicesSimulatorIPP/0.8.1-experimental'
 
         def log_message(self, fmt, *args):
             LOGGER.info('%s %s', self.client_address[0], fmt % args)
@@ -148,7 +204,14 @@ def create_handler(output: str | Path):
         def do_GET(self):
             if urlparse(self.path).path == '/diagnostics':
                 with lock:
-                    payload = json.dumps({'events': list(events), 'jobs_seen': len(jobs)}).encode()
+                    payload = json.dumps({
+                        'events': list(events),
+                        'jobs_seen': len(jobs),
+                        'jobs': [{'job_id': j['job_id'], 'state': j['state'],
+                                  'image_count': len(j.get('images', []))}
+                                 for j in list(jobs.values())[-15:]],
+                        'supported_http_request_bodies': ['content-length', 'chunked']
+                    }).encode()
                 return self.send_bytes(payload, 'application/json')
             if urlparse(self.path).path == '/healthz':
                 data = json.dumps({'status': 'ok', 'printers': list(PRINTERS), 'mode': 'experimental'}).encode()
@@ -161,15 +224,17 @@ def create_handler(output: str | Path):
             if key not in PRINTERS or path != f'/ipp/{key}':
                 return self.send_bytes(b'Unknown printer', 'text/plain', 404)
             try:
-                length = int(self.headers.get('Content-Length', '-1'))
-                if length < 0:
-                    return self.send_bytes(b'Content-Length required', 'text/plain', 411)
-                if length > MAX_IPP_SIZE:
-                    return self.send_bytes(b'Print job too large', 'text/plain', 413)
-                payload = self.rfile.read(length)
+                payload = read_ipp_http_body(self.rfile, self.headers)
                 request = parse_request(payload)
             except (ValueError, OverflowError) as exc:
-                return self.send_bytes(str(exc).encode(), 'text/plain', 400)
+                # Reading may have ended before consuming an invalid request;
+                # close this HTTP/1.1 connection to avoid framing confusion.
+                self.close_connection = True
+                status_code = 413 if isinstance(exc, OverflowError) else 400
+                record_event(0, status_code, None, capture_status='http_rejected',
+                             detail=str(exc))
+                LOGGER.warning('IPP HTTP request rejected: %s', exc)
+                return self.send_bytes(str(exc).encode(), 'text/plain', status_code)
             host = self.headers.get('Host', f'127.0.0.1:{self.server.server_port}')
             if any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-[]' for c in host):
                 host = f'127.0.0.1:{self.server.server_port}'
@@ -226,8 +291,10 @@ def create_handler(output: str | Path):
                     record = jobs.get(jid)
                 if record:
                     out = job_attributes(record, uri)
+                    record_event(op, 0, None, jid, 'state_' + str(record['state']))
                 else:
                     status = 0x0406
+                    record_event(op, status, None, jid, detail='Unknown job for status poll')
             elif op == 0x000A:
                 # Get-Jobs: provide latest job details as a minimal IPP subset.
                 with lock:

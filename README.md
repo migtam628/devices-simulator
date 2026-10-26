@@ -76,6 +76,23 @@ See the [macOS CoreHID scale development and test guide](docs/MACOS_COREHID_SCAL
 
 For pilots, deployment readiness, support boundaries and commercial-use questions, read the **[Company evaluation guide](docs/COMPANY_EVALUATION.md)**.
 
+## macOS CUPS "Waiting for job to complete" / no JPG (v0.8.1)
+
+The IPP server previously rejected streaming HTTP `Transfer-Encoding: chunked` requests because it required `Content-Length`. v0.8.1 decodes bounded chunked uploads and records CUPS job-state polls.
+
+After installing the new build, fully quit the old simulator process, reopen the app, and check:
+
+    curl -s http://127.0.0.1:8631/healthz | python3 -m json.tool
+    curl -s http://127.0.0.1:8631/diagnostics | python3 -m json.tool
+    lpstat -v Lulwa_SIM_Zebra_4x6
+    lpstat -p Lulwa_SIM_Zebra_4x6 -l
+    lpstat -o Lulwa_SIM_Zebra_4x6
+
+If a previous simulator test job is still stuck, cancel that job in macOS printer queue, or intentionally cancel every pending job from the **simulated Zebra queue only** using `cancel -a Lulwa_SIM_Zebra_4x6`. Then use **System Integration → Verify OS Print → JPG** again.
+
+Diagnostics track operation state codes (3=pending, 8=aborted, 9=completed). Installation in the OS is not proof of a captured JPG.
+
+See [CUPS troubleshooting](docs/CUPS_JPG_TROUBLESHOOTING.md) for detailed interpretation and safeguards.
 ## Download the app
 
 [**Browse published releases**](https://github.com/migtam628/devices-simulator/releases)

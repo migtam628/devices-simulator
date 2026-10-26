@@ -1,4 +1,4 @@
-# Install OS-visible simulated printers — experimental v0.2
+# Install OS-visible simulated printers — experimental v0.8.1
 
 The IPP server presents virtual print devices to operating-system printer
 settings. It does **not** currently install a scanner or native USB device.
@@ -100,3 +100,7 @@ not register it as an OS scanner. Thermal label makers are printers.
 - The partial IPP protocol implementation is *not* IPP Everywhere certified.
 - Carrier documents can contain PII: protect JPG output and limit retention.
 - An accepted captured job does not mean an actual order was fulfilled.
+
+## macOS print jobs stuck waiting
+
+See [CUPS Print → JPG troubleshooting](CUPS_JPG_TROUBLESHOOTING.md). v0.8.1 supports bounded HTTP chunked IPP request bodies and records IPP job-state diagnostics. An installed queue does not guarantee a completed print.
