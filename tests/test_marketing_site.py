@@ -49,3 +49,23 @@ def test_readme_illustrations_exist():
     assert "Company evaluation" in readme
     assert "HID" in readme
     assert "CUPS" in readme
+
+
+def test_landing_page_concept_hybrid():
+    page = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
+    styles = (ROOT / "docs" / "site.css").read_text(encoding="utf-8")
+    script = (ROOT / "docs" / "site.js").read_text(encoding="utf-8")
+    for section in ("hero-title", "features", "workflows", "compatibility", "use-cases", "faq", "download"):
+        assert f'id="{section}"' in page
+    assert page.count('class="feature-card"') == 6
+    assert page.count('class="step-card"') == 4
+    assert 'assets/device-lab.svg' in page
+    assert "This hero" not in page
+    assert "native scanner driver" in page.lower()
+    assert "not a virtual HID" in page
+    assert "github.com/migtam628/devices-simulator/releases" in page
+    assert "data-os" in page and "releases/download/v0.6.1/" in page
+    assert "@media(max-width:780px)" in styles
+    assert "@media(max-width:485px)" in styles
+    assert "mobile-menu" in script and "os-recommendation" in script
+    ET.parse(ROOT / "docs" / "assets" / "device-lab.svg")

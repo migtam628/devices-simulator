@@ -56,3 +56,9 @@ Never publish real customer addresses, carrier barcodes, print payloads, credent
 - Verify the v0.6.1 CUPS pipeline on real macOS and Linux devices, as CI tests alone don't certify host support.
 - Confirm release downloads are current, signed installers are not yet available, and supported platform statuses are not overstated.
 - Review data retention, security, privacy policy, support process and commercial contact options.
+
+## Selected landing-page direction (Concept 2 + Concept 3 hybrid)
+
+The public landing page was redesigned with a dark product-led hero and illustrated device lab (Concept 2), paired with the enterprise information structure and compatibility guidance of Concept 3. It includes six feature cards, workflow steps, software-industry use cases, capability matrix, FAQ, and OS-specific release links. The lightweight `docs/site.js` highlights a suggested download platform and closes mobile navigation accessibly. The graphic is an SVG product illustration, **not a claim that all device types are natively installed**.
+
+After changes to `/docs`, the site's deployment depends on Pages being enabled and updated from `main` → `/docs`. Verify the published Pages URL and all OS download links before distributing to companies. The OS-specific links in `docs/index.html` currently target v0.6.1; update the version for future releases.
