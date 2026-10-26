@@ -95,6 +95,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Windows generates CRLF checksums; normalize line endings for Ubuntu sha256sum.
+          sed -i 's/\r$//' release-assets/*.sha256
           for stem in DevicesSimulator-Windows-x64 DevicesSimulator-macOS-x64 DevicesSimulator-macOS-arm64; do
             test -s "release-assets/${stem}.zip"
             (cd release-assets && sha256sum -c "${stem}.zip.sha256")
