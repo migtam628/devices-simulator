@@ -62,7 +62,7 @@ def test_landing_page_concept_hybrid():
     assert 'assets/device-lab.svg' in page
     assert "This hero" not in page
     assert "native scanner driver" in page.lower()
-    assert "not a virtual HID" in page
+    assert "not a virtual hid" in page.lower()
     assert "github.com/migtam628/devices-simulator/releases" in page
     assert "data-os" in page and "releases/download/v0.6.1/" in page
     assert "@media(max-width:780px)" in styles
