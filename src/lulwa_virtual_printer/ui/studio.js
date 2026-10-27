@@ -66,7 +66,7 @@ function flowCard(n){
  const subtitle=d?d.name:n.type==="barcode"?(n.config.value||"Test data"):
      n.type==="scale"?"Choose a saved scale":n.type==="capture"?"Choose a saved printer":"Local in-app step";
  return '<div class="flow-node '+t.color+(flowSelected===n.id?" selected":"")+'" data-flow-node="'+clean(n.id)+'" style="left:'+n.x+'px;top:'+n.y+'px">'+
- '<div class="flow-grab" data-flow-drag="'+clean(n.id)+'" data-action="flow-select:'+clean(n.id)+'"><span class="flow-node-icon">'+t.icon+'</span><span><b>'+t.label+'</b><small>'+clean(t.caption)+'</small></span><span class="flow-drag-handle" aria-hidden="true">⠿</span></div>'+
+ '<div class="flow-grab" role="button" tabindex="0" aria-label="Select '+clean(t.label)+' node" data-flow-drag="'+clean(n.id)+'" data-action="flow-select:'+clean(n.id)+'"><span class="flow-node-icon">'+t.icon+'</span><span><b>'+t.label+'</b><small>'+clean(t.caption)+'</small></span><span class="flow-drag-handle" aria-hidden="true">⠿</span></div>'+
  '<div class="flow-node-foot">'+clean(subtitle)+'</div><span class="flow-port in" aria-hidden="true"></span><span class="flow-port out" aria-hidden="true"></span></div>';
 }
 function flowWires(){
@@ -231,4 +231,12 @@ document.addEventListener("pointerup",event=>{
    flowConnect=null;
  }
  flowSelected=record.id;draw();
+});
+
+// Keyboard support for choosing nodes and completing a connection.
+document.addEventListener("keydown",event=>{
+ if(route!=="studio"||!event.target.matches(".flow-grab"))return;
+ if(event.key!=="Enter"&&event.key!==" ")return;
+ event.preventDefault();
+ studioAction(event.target.dataset.action);
 });
