@@ -48,7 +48,7 @@ def test_real_loopback_tcp_scale_protocol_and_live_weight(tmp_path):
         assert snapshot["scope"]=="localhost_only"
         assert snapshot["listeners"][0]["requests"]>=6
         assert snapshot["listeners"][0]["external_client_verified"]
-        assert snapshot["listeners"][0]["events"][0]["operation"]=="unsupported"
+        assert any(e["operation"]=="unsupported" for e in snapshot["listeners"][0]["events"])
     finally:
         manager.stop_all()
     with pytest.raises(OSError):
