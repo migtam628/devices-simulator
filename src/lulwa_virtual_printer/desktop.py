@@ -31,6 +31,7 @@ def main():
         finally:
             server.hub_hid.stop()
             server.hub_scale_hid.stop()
+            server.hub_connections.stop_all()
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)

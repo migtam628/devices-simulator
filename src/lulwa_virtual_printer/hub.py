@@ -29,6 +29,7 @@ from .device_catalog import BY_ID
 from .os_print_test import verify_print_roundtrip
 from .device_catalog import public_catalog, select_model
 from .studio_engine import StudioManager
+from .connection_engine import ConnectionEngine
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 35 * 1024 * 1024
@@ -287,7 +288,7 @@ class HubStore:
         return None
 
 
-def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: MacScaleHID, studio: StudioManager):
+def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: MacScaleHID, studio: StudioManager, connections: ConnectionEngine):
     class Handler(BaseHTTPRequestHandler):
         server_version = "DevicesHub/0.3"
         protocol_version = "HTTP/1.1"
@@ -308,6 +309,9 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
 
         def do_GET(self):
             path = unquote(urlparse(self.path).path)
+            if path == "/connections.js":
+                file = Path(__file__).with_name("ui") / "connections.js"
+                return self.send(200, file.read_bytes(), "application/javascript; charset=utf-8")
             if path == "/studio.js":
                 file = Path(__file__).with_name("ui") / "studio.js"
                 return self.send(200, file.read_bytes(), "application/javascript; charset=utf-8")
@@ -327,12 +331,14 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                     "ipp_service_ready": service_ready(), "hid": hid.state(),
                     "scale_hid": scale_hid.state(),
                     "presets": PRESETS, "catalog": public_catalog(),
-                    "studio": studio.snapshot(),
+                    "studio": studio.snapshot(), "connections": connections.snapshot(),
                     "platform": platform.system(), "output_dir": str(store.output_dir),
                     "service": "local", "os_install_supported": platform.system() in ("Darwin", "Linux", "Windows"),
                 })
             if path == "/api/studio/workflows":
                 return self.send(200, studio.snapshot())
+            if path == "/api/connections":
+                return self.send(200, connections.snapshot())
             if path == "/api/catalog":
                 return self.send(200, public_catalog())
             if path == "/api/healthz":
@@ -402,6 +408,17 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                         scale_hid.probe()
                         return self.send(200, {"scale_hid": scale_hid.state()})
                     return self.send(404, {"error": "Unknown scale HID action"})
+                if path.startswith("/api/connections/"):
+                    device_id = payload.get("device_id")
+                    if payload.get("confirm") is not True:
+                        return self.send(400, {"error": "Explicit localhost listener change confirmation required"})
+                    if path == "/api/connections/start":
+                        return self.send(200, {"connection": connections.start(device_id, payload.get("port", 0))})
+                    if path == "/api/connections/stop":
+                        return self.send(200, {"connection": connections.stop(device_id)})
+                    if path == "/api/connections/fault":
+                        return self.send(200, {"connection": connections.set_fault(device_id, payload.get("fault"))})
+                    return self.send(404, {"error": "Unknown connection command"})
                 if path == "/api/studio/workflows/save":
                     return self.send(200, {"workflow": studio.save(payload)})
                 if path == "/api/studio/workflows/delete":
@@ -434,6 +451,8 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                                 "error": result.get("error", "")})
                 parts = path.strip("/").split("/")
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "model":
+                    if any(a["device_id"] == parts[2] for a in connections.snapshot()["listeners"]):
+                        return self.send(409, {"error": "Stop the active TCP listener before changing the scale model"})
                     return self.send(200, {"device": store.update_model(parts[2], payload)})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "scale-reading":
                     reading = store.simulate_scale_reading(parts[2], payload)
@@ -461,6 +480,8 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                 if len(parts) == 3 and parts[:2] == ["api", "devices"] and parts[2]:
                     if payload.get("action") != "remove_profile":
                         raise ValueError("Only profile removal is supported; OS uninstall is not implemented")
+                    if any(a["device_id"] == parts[2] for a in connections.snapshot()["listeners"]):
+                        connections.stop(parts[2])
                     removed = store.remove_device(parts[2])
                     return self.send(200 if removed else 404, {"removed": removed})
                 return self.send(404, {"error": "Not found"})
@@ -487,7 +508,9 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     hid = MacBarcodeHID()
     scale_hid = MacScaleHID()
     studio = StudioManager(Path(state_dir), store)
-    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid, scale_hid, studio))
+    connections = ConnectionEngine(store)
+    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid, scale_hid, studio, connections))
+    server.hub_connections = connections
     server.hub_studio = studio
     server.hub_hid = hid
     server.hub_scale_hid = scale_hid
@@ -542,6 +565,7 @@ def main():
             finally:
                 server.hub_hid.stop()
                 server.hub_scale_hid.stop()
+                server.hub_connections.stop_all()
     finally:
         stop_attached_ipp(ipp_server, ipp_thread)
 
