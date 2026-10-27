@@ -14,10 +14,14 @@ import socket
 import socketserver
 import threading
 
+from .device_catalog import BY_ID
+
 MAX_LISTENERS = 4
 MAX_CLIENTS = 8
 MAX_COMMAND = 128
 FAULTS = frozenset(("none", "busy", "disconnect"))
+# The I0 reply advertises only implemented operations, not complete SICS Level 0.
+DISCOVERY_COMMANDS = ("I0", "I2", "I3", "I4", "S", "SI")
 
 
 def utc_now():
@@ -120,18 +124,37 @@ class _Adapter:
         with self.lock:
             self.requests += 1
             if self.fault == "disconnect":
-                self.record(command if command in ("S", "SI") else "unsupported", "disconnected")
+                self.record(command if command in DISCOVERY_COMMANDS else "unsupported", "disconnected")
                 return None
             if self.fault == "busy":
-                self.record(command if command in ("S", "SI") else "unsupported", "busy")
-                return "S I"
-        if command not in ("S", "SI"):
+                self.record(command if command in DISCOVERY_COMMANDS else "unsupported", "busy")
+                return f"{command} I" if command in ("I0", "I2", "I3", "I4") else "S I"
+        if command not in DISCOVERY_COMMANDS:
             self.record("unsupported", "rejected")
             return "ES"
         device = self.store.get_device(self.device_id)
         if device is None:
             self.record(command, "profile_removed")
-            return "S I"
+            return f"{command} I" if command.startswith("I") else "S I"
+        if command == "I0":
+            self.record(command, "discovery")
+            return "\r\n".join(
+                f'I0 {"A" if i == len(DISCOVERY_COMMANDS) - 1 else "B"} 0 "{name}"'
+                for i, name in enumerate(DISCOVERY_COMMANDS)
+            )
+        if command == "I2":
+            model = BY_ID.get(device.get("model_id"), {})
+            capacity = model.get("max_kg", 0)
+            # A simulator-owned identifier, not a manufacturer's USB identity.
+            reply = f'I2 A "DEVICES_SIM/{device.get("model_id", "generic-scale")}/{capacity}kg"'
+            self.record(command, "identity")
+            return reply
+        if command == "I3":
+            self.record(command, "identity")
+            return 'I3 A "DevicesSimulator/0.12/fixture"'
+        if command == "I4":
+            self.record(command, "identity")
+            return f'I4 A "SIM-{self.device_id.replace("-", "")[:12].upper()}"'
         reading = device.get("last_measurement")
         if not reading:
             # No user fixture has been set yet: represent an empty, stable scale.

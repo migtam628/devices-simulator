@@ -104,3 +104,36 @@ Windows COM integration requires a separate signed driver or virtualization laye
 ## v0.11.1 reliability checks
 
 Stopping a TCP listener actively shuts down its connected client sockets. The Connections dashboard also supports **Test serial roundtrip**, a local PTY client verification that opens the advertised device path, sends `SI`, and checks a real response. A successful self-test proves the local adapter works, not that a separate commercial application is supported. Both behaviors are regression-tested.
+
+## v0.12.0 — Scale protocol discovery
+
+The TCP listener and POSIX serial PTY share the same validated read-only command responder. In addition to `S` and `SI`, send:
+
+| Command | Reply |
+|---|---|
+| `I0` | Multi-line supported command inventory. Uses `I0 B 0 "..."` for intermediate lines and `I0 A 0 "SI"` as the last line. Lists exactly `I0`, `I2`, `I3`, `I4`, `S`, `SI`. |
+| `I2` | `I2 A "DEVICES_SIM/<model_id>/<max_kg>kg"` (generic reference capacity, not calibration) |
+| `I3` | `I3 A "DevicesSimulator/0.12/fixture"` |
+| `I4` | `I4 A "SIM-<unique-profile-token>"` |
+| Other commands | `ES`, including unsupported `I1`, `SIR`, `Z`, `T`, or `@`. |
+
+These inquiry conventions are adapted from publicly documented MT-SICS protocol formats. The simulator deliberately advertises only implemented commands and does not claim full Level 0 support or manufacturer identity. The scale catalog remains reference-only; third-party software requiring a specific product/version handshake may reject this test adapter.
+
+To test discovery from a separate local process, use a listener port assigned by the Connections dashboard:
+
+```python
+import socket
+with socket.create_connection(("127.0.0.1", 12500), timeout=3) as s:
+    s.settimeout(3)
+    s.sendall(b"I0\r\n")
+    with s.makefile("rb") as lines:
+        while True:
+            line = lines.readline()
+            print(line.decode('ascii').rstrip())
+            if line.startswith(b"I0 A "):
+                break
+```
+
+Replace `12500` with your actual displayed port. The multi-line inventory also works over the macOS/Linux serial PTY path. Busy fault returns `I2 I` for an `I2` inquiry and `S I` for a scale weight read; Disconnect fault suppresses replies or closes the TCP client connection.
+
+**Not implemented:** streaming responses (`SIR`), zero/tare mutating commands (`Z`, `T`), full manufacturer-specific BC protocol, or OS-native USB/BLE/COM hardware. These require additional development and verification.

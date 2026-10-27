@@ -74,7 +74,7 @@ function connections(){
   '<div class="conn-heading"><h2>Serial / COM-compatible fixtures</h2><p class="muted">macOS and Linux: real pseudo-terminal paths. Windows virtual COM remains planned and requires a different driver or API.</p></div>'+
   '<div class="grid two">'+(serialCards||'<div class="card"><h2>No Serial scale profile</h2><p class="small">Create Device → Shipping Scale → Generic or METTLER TOLEDO reference → RS-232 / COM. Then activate it here.</p>'+button("Create Scale","wizard","primary")+'</div>')+'</div>'+
   '<div class="card mt"><h2>Serial protocol scope</h2><p class="muted">Send ASCII S or SI followed by CRLF to the PTY path. This is a generic MT-SICS-style subset, not an official brand emulation. In serial mode, Disconnect fault simulates no reply rather than physical USB unplugging.</p></div>'+
-  '<div class="card mt"><h2>Client example</h2><p class="muted">Use the port shown above in a separate application or terminal. This sends the immediate-weight command on an actual localhost TCP socket.</p>'+
+  '<div class="card mt"><h2>Client example</h2><p class="muted">Use the port above in a separate application or terminal. Send SI to read a weight; use I0 for the implemented-command inventory, I2 for generic model/capacity, I3 for simulator version, or I4 for a simulated ID. This does not claim full MT-SICS support.</p>'+
   '<pre class="conn-code">python3 -c \'import socket; s=socket.create_connection(("127.0.0.1", PORT)); s.sendall(b"SI\\r\\n"); print(s.recv(128)); s.close()\'</pre>'+
   '<p class="small">Replace PORT with your active port number. No listener auto-starts after restarting Devices Simulator. Stop it using the button above.</p></div>';
 }

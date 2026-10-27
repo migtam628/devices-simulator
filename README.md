@@ -94,6 +94,13 @@ See the [Connection Engine Guide](docs/CONNECTION_ENGINE.md) for PTY testing com
 The Connection Engine now closes existing TCP client sockets when a listener is stopped, rather than leaving those sessions waiting for their idle timeout. POSIX serial fixtures now include **Test serial roundtrip**, which opens the generated PTY from a separate file descriptor and checks the actual response.
 
 These are **local transport tests**. Neither TCP nor PTY self-tests certify external software compatibility, and the serial PTY is not Windows COM or USB hardware.
+## Protocol discovery for third-party scale clients — v0.12.0
+
+External applications can now query **what the simulator actually supports** over TCP and POSIX serial, instead of assuming an entire manufacturer protocol is available. Implemented inquiry commands: `I0` (advertises only supported commands), `I2` (generic simulator identity and capacity), `I3` (simulator software identity) and `I4` (simulated serial ID). Existing `S` and `SI` weight commands remain supported.
+
+The replies identify the endpoint as `DEVICES_SIM` or `DevicesSimulator` and never claim real METTLER TOLEDO hardware. `SIR`, zero/tare commands, Windows COM, USB/HID, and BLE are **not yet implemented**. Discovery is designed to fail visibly for software needing unsupported commands rather than pretending compatibility.
+
+See [Connection Engine protocol and socket test guide](docs/CONNECTION_ENGINE.md).
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
