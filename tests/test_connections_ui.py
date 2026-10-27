@@ -49,3 +49,10 @@ def test_connections_browser_asset_served(tmp_path):
         server.shutdown()
         server.server_close()
         worker.join(timeout=4)
+
+
+def test_serial_controls_present_in_connections_view():
+    text = Path(hub.__file__).with_name("ui").joinpath("connections.js").read_text(encoding="utf-8")
+    for action in ("serial-start:", "serial-stop:", "serial-weight:", "serial-fault:"):
+        assert action in text
+    assert "function serialAction" in text

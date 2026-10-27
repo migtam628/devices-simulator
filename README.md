@@ -76,12 +76,19 @@ Studio now has a visual workflow editor, a saved workflow library, configurable 
 
 ## Universal Connection Engine — TCP milestone (main branch)
 
-The first **real external connection adapter** is available in v0.10.0: an **opt-in loopback TCP server** for shipping-scale fixtures. Another local application can open a socket, send a line-delimited \`SI\` (immediate) or \`S\` (stable) command, and read back a tare-adjusted scale value using a limited MT-SICS-style response. It supports simulated unstable, overload, busy and disconnect states, plus connection telemetry.
+External software connectivity first became available in v0.10.0, with additional POSIX serial endpoints in v0.11.0: an **opt-in loopback TCP server** for shipping-scale fixtures. Another local application can open a socket, send a line-delimited \`SI\` (immediate) or \`S\` (stable) command, and read back a tare-adjusted scale value using a limited MT-SICS-style response. It supports simulated unstable, overload, busy and disconnect states, plus connection telemetry.
 
 **This is not** a registered USB/HID device, a serial/COM driver, a BLE peripheral, or a certified METTLER TOLEDO BC emulation. TCP listens only on \`127.0.0.1\`, never starts automatically, and requires explicit activation in the **Connections** dashboard (or authenticated Hub API). The scale reference profile must have **Network** selected.
 
 See the [Connection Engine guide](docs/CONNECTION_ENGINE.md) for the exact API, socket examples, security and troubleshooting. Windows/macOS/Linux runtime verification is tracked separately from Python socket tests.
 
+## Virtual serial scale ports — macOS and Linux (v0.11.0)
+
+Alongside the TCP adapter, Devices Simulator now supports an **opt-in POSIX pseudo-terminal (PTY)** for serial-compatible scale testing on macOS and Linux. In the **Connections** page, configure a network-capable scale for TCP or a serial-capable scale for RS-232 / COM and activate the matching adapter.
+
+Another local program can open the generated `/dev/...` PTY path, send ASCII `S` or `SI`, and receive the same weight fixture values as the TCP adapter. Busy and silent-response faults are supported. This is **not a physical RS-232 port, USB CDC device, or Windows COM driver**. Windows serial emulation requires separate native work.
+
+See the [Connection Engine Guide](docs/CONNECTION_ENGINE.md) for PTY testing commands, platform boundaries and examples.
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

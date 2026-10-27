@@ -420,6 +420,12 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                         return self.send(200, {"connection": connections.set_fault(device_id, payload.get("fault"))})
                     if path == "/api/connections/probe":
                         return self.send(200, {"probe": connections.probe(device_id)})
+                    if path == "/api/connections/serial-start":
+                        return self.send(200, {"connection": connections.start_serial(device_id)})
+                    if path == "/api/connections/serial-stop":
+                        return self.send(200, {"connection": connections.stop_serial(device_id)})
+                    if path == "/api/connections/serial-fault":
+                        return self.send(200, {"connection": connections.set_serial_fault(device_id, payload.get("fault"))})
                     return self.send(404, {"error": "Unknown connection command"})
                 if path == "/api/studio/workflows/save":
                     return self.send(200, {"workflow": studio.save(payload)})
@@ -453,8 +459,9 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                                 "error": result.get("error", "")})
                 parts = path.strip("/").split("/")
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "model":
-                    if any(a["device_id"] == parts[2] for a in connections.snapshot()["listeners"]):
-                        return self.send(409, {"error": "Stop the active TCP listener before changing the scale model"})
+                    if any(a["device_id"] == parts[2]
+                           for a in connections.snapshot()["listeners"] + connections.snapshot()["serial_listeners"]):
+                        return self.send(409, {"error": "Stop active TCP/serial interfaces before changing the scale model"})
                     return self.send(200, {"device": store.update_model(parts[2], payload)})
                 if len(parts) == 4 and parts[:2] == ["api", "devices"] and parts[3] == "scale-reading":
                     reading = store.simulate_scale_reading(parts[2], payload)
@@ -484,6 +491,8 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                         raise ValueError("Only profile removal is supported; OS uninstall is not implemented")
                     if any(a["device_id"] == parts[2] for a in connections.snapshot()["listeners"]):
                         connections.stop(parts[2])
+                    if any(a["device_id"] == parts[2] for a in connections.snapshot()["serial_listeners"]):
+                        connections.stop_serial(parts[2])
                     removed = store.remove_device(parts[2])
                     return self.send(200 if removed else 404, {"removed": removed})
                 return self.send(404, {"error": "Not found"})

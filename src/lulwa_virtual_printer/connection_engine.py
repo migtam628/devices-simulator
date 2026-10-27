@@ -157,11 +157,16 @@ class ConnectionEngine:
         self.store = store
         self.lock = threading.RLock()
         self.adapters = {}
+        # Imported lazily to keep POSIX-specific tty behavior off Windows.
+        from .posix_serial import PosixSerialEngine
+        self.serial = PosixSerialEngine(store)
 
     def snapshot(self):
         with self.lock:
             return {"listeners": [a.snapshot() for a in self.adapters.values()],
-                    "supported": ["tcp_scale_sics_read_only"],
+                    "serial_listeners": self.serial.snapshot(),
+                    "serial_supported": __import__("os").name == "posix",
+                    "supported": ["tcp_scale_sics_read_only", "posix_pty_scale_sics_read_only"],
                     "scope": "localhost_only", "max_listeners": MAX_LISTENERS}
 
     def start(self, device_id, port=0):
@@ -247,7 +252,17 @@ class ConnectionEngine:
             adapter.thread.join(timeout=3)
             return adapter.snapshot()
 
+    def start_serial(self, device_id):
+        return self.serial.start(device_id)
+
+    def stop_serial(self, device_id):
+        return self.serial.stop(device_id)
+
+    def set_serial_fault(self, device_id, mode):
+        return self.serial.fault(device_id, mode)
+
     def stop_all(self):
         with self.lock:
             for device_id in list(self.adapters):
                 self.stop(device_id)
+            self.serial.stop_all()

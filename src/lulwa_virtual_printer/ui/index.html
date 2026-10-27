@@ -73,6 +73,11 @@ body.dark .flow-canvas-viewport,body.dark .flow-canvas{background-color:#18283b}
 .conn-event-list span{color:var(--mute)}
 .conn-code{white-space:pre-wrap;overflow-wrap:anywhere;background:#102b47;color:#e4f7ff;padding:15px;border-radius:8px;font-size:12px}
 @media(max-width:720px){.conn-metric strong{font-size:23px}.conn-endpoint{font-size:15px}}
+
+.conn-serial-path{background:#132e49;border:1px solid #335e83;border-radius:8px;padding:13px;color:#c8efff;margin:12px 0}
+.conn-serial-path code{font-family:ui-monospace,Menlo,monospace;overflow-wrap:anywhere;font-size:12px}
+.conn-card>.grid.two{margin:15px 0}
+.conn-card .field input,.conn-card .field select{max-width:100%;width:100%}
 </style></head><body>
 <div class="shell"><aside class="side"><div class="brand"><div class="logo">▣</div><div class="title">Devices SimulatorDevice Hub Pro</small></div></div><div class="navtitle">Workspace</div><div id="sidebar"></div><div class="sidefoot">● <b>Local hub ready</b><br>OS integration experimental<br>v0.3 development preview</div></aside>
 <div class="main"><header class="top"><div><small>Workspace / </small><strong id="breadcrumb">Home</strong></div><div class="row"><span class="pill" id="systemstatus">● Local service</span><button class="btn" id="theme" aria-label="Toggle theme">◐ Theme</button></div></header><main id="page" class="body" aria-live="polite"></main></div></div><div class="toast" id="toast" role="status"></div>
@@ -245,6 +250,7 @@ if(k.startsWith("install:")||k.startsWith("uninstall:")){
     if(!confirm((removing?"Remove ":"Install ")+r.queue+(removing?" from":" into")+" "+state.platform+"? This changes a real operating-system printer queue and may require administrator privileges."))return;
     try{const reply=await post("/api/system/"+(removing?"uninstall":"install"),{preset:id,confirm:true});await refresh();showToast(reply.registration.status==="registered"?"OS printer installed and verified":"OS printer removed and verified")}catch(e){await refresh();showToast("OS registration error: "+e.message,true)}return
 }
+if(k.startsWith("serial-"))return serialAction(k);
 if(k.startsWith("tcp-"))return connectionAction(k);
 if(k.startsWith("flow-"))return studioAction(k);
 if(k==="studio-run"){
