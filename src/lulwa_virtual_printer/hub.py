@@ -28,6 +28,7 @@ from .mac_scale_hid import MacScaleHID
 from .device_catalog import BY_ID
 from .os_print_test import verify_print_roundtrip
 from .device_catalog import public_catalog, select_model
+from .studio_engine import StudioManager
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 35 * 1024 * 1024
@@ -286,7 +287,7 @@ class HubStore:
         return None
 
 
-def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: MacScaleHID):
+def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: MacScaleHID, studio: StudioManager):
     class Handler(BaseHTTPRequestHandler):
         server_version = "DevicesHub/0.3"
         protocol_version = "HTTP/1.1"
@@ -307,6 +308,9 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
 
         def do_GET(self):
             path = unquote(urlparse(self.path).path)
+            if path == "/studio.js":
+                file = Path(__file__).with_name("ui") / "studio.js"
+                return self.send(200, file.read_bytes(), "application/javascript; charset=utf-8")
             if path in ("/", "/index.html"):
                 html = Path(__file__).with_name("ui").joinpath("index.html").read_text(encoding="utf-8")
                 html = html.replace("__HUB_TOKEN__", token)
@@ -323,9 +327,12 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                     "ipp_service_ready": service_ready(), "hid": hid.state(),
                     "scale_hid": scale_hid.state(),
                     "presets": PRESETS, "catalog": public_catalog(),
+                    "studio": studio.snapshot(),
                     "platform": platform.system(), "output_dir": str(store.output_dir),
                     "service": "local", "os_install_supported": platform.system() in ("Darwin", "Linux", "Windows"),
                 })
+            if path == "/api/studio/workflows":
+                return self.send(200, studio.snapshot())
             if path == "/api/catalog":
                 return self.send(200, public_catalog())
             if path == "/api/healthz":
@@ -395,6 +402,12 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                         scale_hid.probe()
                         return self.send(200, {"scale_hid": scale_hid.state()})
                     return self.send(404, {"error": "Unknown scale HID action"})
+                if path == "/api/studio/workflows/save":
+                    return self.send(200, {"workflow": studio.save(payload)})
+                if path == "/api/studio/workflows/delete":
+                    return self.send(200, {"deleted": studio.delete(payload.get("id"))})
+                if path == "/api/studio/workflows/execute":
+                    return self.send(200, {"run": studio.run(payload.get("id"))})
                 if path == "/api/studio/run":
                     result = store.run_shipping_demo(str(payload.get("brother_id","")),
                                                      str(payload.get("zebra_id","")))
@@ -473,7 +486,9 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     token = secrets.token_urlsafe(32)
     hid = MacBarcodeHID()
     scale_hid = MacScaleHID()
-    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid, scale_hid))
+    studio = StudioManager(Path(state_dir), store)
+    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid, scale_hid, studio))
+    server.hub_studio = studio
     server.hub_hid = hid
     server.hub_scale_hid = scale_hid
     server.hub_store = store

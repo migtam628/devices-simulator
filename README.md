@@ -64,6 +64,16 @@ The app now includes an opt-in native **CoreHID** prototype for a generic POS sh
 **Apple's HID virtual-device entitlement is required.** Ordinary unsigned Releases do not have approved entitlements. An attempted activation can fail with a precise diagnostic; the app must not show a connected device unless the OS accepts it. Even if it enumerates, this is NOT a DYMO M10 USB identity/VID/PID clone.
 
 See the [macOS CoreHID scale development and test guide](docs/MACOS_COREHID_SCALE.md). Other OS HID drivers remain planned.
+## Advanced Studio — editable workflow engine (v0.9.0)
+
+Studio now has a visual workflow editor, a saved workflow library, configurable nodes and connections, drag positioning, revision protection and run history. A Shipping Station template can route sample barcode data through an optional scale fixture into Brother/Zebra captures, then an output report.
+
+**Supported:** Start → Barcode Data → Scale Reading → Printer/Scanner Capture → Output. All runs use **in-app local fixtures**, not OS printer queues. Failed steps block their downstream dependencies while independent branches can still complete. View local JPG captures in the run log.
+
+**Not yet supported:** External USB/BLE/network data streams, live remote devices, background triggers, arbitrary scripts, OS printing, or automatic order fulfillment.
+
+[Advanced Studio technical architecture and roadmap](docs/ADVANCED_STUDIO.md)
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
