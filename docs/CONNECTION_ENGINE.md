@@ -8,7 +8,7 @@ Implementation:
 - \`src/lulwa_virtual_printer/connection_engine.py\`: lifecycle manager and localhost-only TCP scale adapter
 - \`src/lulwa_virtual_printer/hub.py\`: local authenticated start/stop/fault APIs
 - \`tests/test_connection_engine.py\`: real TCP socket integration tests and negative cases
-- Dedicated Connection Engine UI: follows as a separate change
+- `src/lulwa_virtual_printer/ui/connections.js`: live Connections screen, listener controls, fault injection and socket self-test
 - Process shutdown stops all owned adapters; adapters do **not** auto-start when the app reopens
 
 ## Action plan / milestones
@@ -17,7 +17,7 @@ Implementation:
 |---|---|---|
 | 1 | Local TCP transport, streaming socket commands and explicit lifecycle | Implemented in source |
 | 2 | Link existing weight fixtures, simulated errors, telemetry and API control | Implemented in source |
-| 3 | Device Hub management UI, real TCP client self-test, API integration | In progress |
+| 3 | Device Hub Connections page, real TCP client self-test, API integration | Implemented |
 | 4 | Model-specific MT-SICS coverage, protocol contracts, scripts and replay | Planned |
 | 5 | Cross-platform serial / PTY / Windows COM adapters | Planned |
 | 6 | BLE GATT peripherals and USB HID drivers per OS | Platform-specific, not implemented |
@@ -49,10 +49,11 @@ All POST operations require \`X-Devices-Token\`, already held in the local app. 
 | POST /api/connections/start | device_id, port=0, confirm=true | Bind an explicit loopback TCP listener, return chosen port |
 | POST /api/connections/fault | device_id, fault=none/busy/disconnect, confirm=true | Simulate protocol errors and lost connections |
 | POST /api/connections/stop | device_id, confirm=true | Stop a previously started listener |
+| POST /api/connections/probe | device_id, confirm=true | Real TCP roundtrip from separate socket; not third-party compatibility proof |
 | POST /api/devices/{id}/scale-reading | gross_kg, tare_kg, unit, stable | Update the saved local weight fixture read by TCP |
 | GET /api/state | none | Includes \`connections\` snapshot for Hub UI |
 
-The connection payload never accepts a custom host/IP address. Ports must be 0 (OS chooses ephemeral) or 1024–65535. Maximum four scale listeners, eight simultaneous clients per listener; each command is bounded and idle connections time out.
+The Connections page supports port assignment, live weight changes and recent command events. The connection payload never accepts a custom host/IP address. Ports must be 0 (OS chooses ephemeral) or 1024–65535. Maximum four scale listeners, eight simultaneous clients per listener; each command is bounded and idle connections time out.
 
 ### Verifying without any real scale
 
@@ -63,7 +64,7 @@ python3 - <<'PY'
 import socket
 with socket.create_connection(("127.0.0.1", 12500), timeout=3) as conn:
     conn.settimeout(3)
-    conn.sendall(b"SI\\r\\n")
+    conn.sendall(b"SI\r\n")
     print(repr(conn.recv(128)))
 PY
 \`\`\`

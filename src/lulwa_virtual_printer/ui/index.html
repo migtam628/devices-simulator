@@ -50,13 +50,36 @@ body.dark{--bg:#101820;--surface:#172333;--line:#35475d;--ink:#eef3f9;--mute:#b0
 .flow-status{padding:4px 7px;border-radius:5px;color:#57738f;background:#e5edf5;font-size:9px;font-weight:800;text-transform:uppercase}.flow-status.completed{color:#0d825d;background:#e0f5eb}.flow-status.failed{color:#a4404e;background:#fbe8ea}.flow-status.skipped{color:#9a741f;background:#fff4d7}
 body.dark .flow-canvas-viewport,body.dark .flow-canvas{background-color:#18283b}body.dark .flow-node{background:#213249;color:#e4f1ff}body.dark .flow-node-foot{border-color:#365570}body.dark .flow-library-item{background:var(--surface);color:var(--ink)}body.dark .flow-safety{background:#1e3b57;color:#b7d8ef}
 @media(max-width:1550px){.flow-layout{grid-template-columns:180px minmax(0,1fr) 235px}}@media(max-width:1180px){.flow-layout{grid-template-columns:175px minmax(0,1fr)}.flow-inspector{grid-column:2}.flow-toolbar{flex-wrap:wrap}}@media(max-width:720px){.flow-layout{grid-template-columns:1fr}.flow-library,.flow-inspector{min-height:auto}.flow-library,.flow-workspace,.flow-inspector,.flow-welcome{grid-column:1}.flow-toolbar .row{justify-content:flex-start}.flow-toolbar>.field{width:100%}.flow-welcome{min-height:300px}}
+
+/* Universal Connection Engine: transparent local TCP listener controls */
+.conn-metric strong{font-size:27px;display:block;color:var(--blue);margin:5px 0}
+.conn-metric .small{font-size:11px}
+.conn-heading{display:flex;flex-direction:column;gap:4px;margin:27px 0 14px}
+.conn-heading h2{font-size:18px}
+.conn-heading p{font-size:12px}
+.conn-card{min-width:0}
+.conn-card>.cardhead{flex-wrap:wrap;gap:9px}
+.conn-meta{font-size:11px;color:var(--mute);margin-bottom:13px}
+.conn-endpoint{font-size:17px;font-family:ui-monospace,Menlo,monospace;letter-spacing:-.03em}
+.conn-controls{padding:14px 0;margin-top:10px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.conn-controls .field{margin:0 0 12px}
+.conn-controls input,.conn-controls select{width:100%}
+.conn-events{margin-top:17px}
+.conn-events summary{font-weight:750;font-size:11px;cursor:pointer;padding:10px;background:var(--pale);border-radius:8px}
+.conn-event-list{max-height:230px;overflow:auto;padding-top:8px}
+.conn-event-list>div{display:grid;grid-template-columns:60px 1fr 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:10px}
+.conn-event-list time{color:var(--mute)}
+.conn-event-list b{color:var(--ink)}
+.conn-event-list span{color:var(--mute)}
+.conn-code{white-space:pre-wrap;overflow-wrap:anywhere;background:#102b47;color:#e4f7ff;padding:15px;border-radius:8px;font-size:12px}
+@media(max-width:720px){.conn-metric strong{font-size:23px}.conn-endpoint{font-size:15px}}
 </style></head><body>
 <div class="shell"><aside class="side"><div class="brand"><div class="logo">▣</div><div class="title">Devices SimulatorDevice Hub Pro</small></div></div><div class="navtitle">Workspace</div><div id="sidebar"></div><div class="sidefoot">● <b>Local hub ready</b><br>OS integration experimental<br>v0.3 development preview</div></aside>
 <div class="main"><header class="top"><div><small>Workspace / </small><strong id="breadcrumb">Home</strong></div><div class="row"><span class="pill" id="systemstatus">● Local service</span><button class="btn" id="theme" aria-label="Toggle theme">◐ Theme</button></div></header><main id="page" class="body" aria-live="polite"></main></div></div><div class="toast" id="toast" role="status"></div>
 <script>
 const TOKEN="__HUB_TOKEN__",E=id=>document.getElementById(id);
-const icons={home:"⌂",devices:"▤",wizard:"⊕",jobs:"▧",gallery:"▥",diagnostics:"◉",integration:"⌘",studio:"◇",settings:"⚙",brother:"▣",zebra:"▤",scanner:"▱",barcode:"▥",receipt:"▦",serial:"⌁",scale:"⚖",network_device:"⌘",usb_device:"⊡",ble_device:"ᛒ",rfid:"◈",sensor:"◉"};
-const nav=[["home","Home"],["devices","My Devices"],["wizard","Create Device"],["jobs","Jobs & Queue"],["gallery","Output Gallery"],["diagnostics","Diagnostics"],["integration","System Integration"],["studio","Advanced Studio"],["settings","Settings"]];
+const icons={home:"⌂",devices:"▤",wizard:"⊕",jobs:"▧",gallery:"▥",diagnostics:"◉",integration:"⌘",studio:"◇",connections:"⊞",settings:"⚙",brother:"▣",zebra:"▤",scanner:"▱",barcode:"▥",receipt:"▦",serial:"⌁",scale:"⚖",network_device:"⌘",usb_device:"⊡",ble_device:"ᛒ",rfid:"◈",sensor:"◉"};
+const nav=[["home","Home"],["devices","My Devices"],["wizard","Create Device"],["jobs","Jobs & Queue"],["gallery","Output Gallery"],["diagnostics","Diagnostics"],["integration","System Integration"],["studio","Advanced Studio"],["connections","Connections"],["settings","Settings"]];
 let state={devices:[],jobs:[],presets:{},platform:"Unknown",output_dir:""},route="home",active="",draft={step:0,preset:"brother",name:"Brother Office Printer",tray:"tray-1",model_id:"generic-office",brand:"Generic",transport:"ipp",saved:""},detailEdit=null;
 const clean=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const preset=id=>state.presets[id]||{};
@@ -194,7 +217,7 @@ function integration(){return heading("SYSTEM INTEGRATION","OS Printer & Scanner
 '<div class="card mt"><h2>Further work</h2>'+['Print one test page from the OS dialog and verify JPG capture','Brother tray selection and Zebra label media roundtrip','Advanced ZPL and Windows compatibility','Scanner eSCL / WIA support (separate device transport)','PrintNode integration'].map(x=>'<div class="item"><span class="pill amber">Test / Pending</span>'+x+'</div>').join("")+'</div>'}
 function studio(){return studioPage();}
 function settings(){return heading("HUB PREFERENCES","Settings","Local output, appearance, and privacy options.")+'<div class="grid two"><div class="card"><h2>Appearance</h2><p class="muted">Change theme without changing system preferences.</p><div class="row mt">'+button("Light","light")+button("Dark","dark")+'</div></div><div class="card"><h2>Output folder</h2><p class="small">'+clean(state.output_dir)+'</p><p class="muted">Set a different root using lulwa-hub --output PATH.</p></div><div class="card"><h2>Privacy</h2><p class="muted">Captures stay local. Customer addresses and labels may contain sensitive information.</p></div><div class="card"><h2>Scope</h2><p class="muted">Native installer, background service and scanner OS support remain planned.</p></div></div>'}
-function draw(){E("sidebar").innerHTML=nav.map(([k,n])=>'<button class="nav '+((route==="detail"?"devices":route)===k?"active":"")+'" data-nav="'+k+'"><i>'+icons[k]+'</i><span class="txt">'+n+'</span></button>').join("");E("breadcrumb").textContent=route==="detail"?"Device Detail":nav.find(([k])=>k===route)?.[1]||"Home";const pages={home,devices,wizard,jobs,gallery,detail,diagnostics,integration,studio,settings};E("page").innerHTML=(pages[route]||home)()}
+function draw(){E("sidebar").innerHTML=nav.map(([k,n])=>'<button class="nav '+((route==="detail"?"devices":route)===k?"active":"")+'" data-nav="'+k+'"><i>'+icons[k]+'</i><span class="txt">'+n+'</span></button>').join("");E("breadcrumb").textContent=route==="detail"?"Device Detail":nav.find(([k])=>k===route)?.[1]||"Home";const pages={home,devices,wizard,jobs,gallery,detail,diagnostics,integration,studio,connections,settings};E("page").innerHTML=(pages[route]||home)()}
 async function test(id,file){try{showToast("Rendering sample locally…");let payload={};if(file){if(file.size>25*1024*1024)throw Error("File must be under 25 MB");if(!/\.(pdf|png|jpe?g|zpl)$/i.test(file.name))throw Error("Use PDF, PNG, JPG or ZPL");const bytes=new Uint8Array(await file.arrayBuffer());let b="";for(let i=0;i<bytes.length;i+=8192)b+=String.fromCharCode(...bytes.subarray(i,i+8192));payload={file_base64:btoa(b),title:file.name.slice(0,80)}}const result=await post("/api/devices/"+id+"/test",payload);await refresh();showToast(result.job.status==="rendered"?"Saved "+result.job.images.length+" JPG page(s) · local capture":"Simulated printer error: "+result.job.error,result.job.status!=="rendered");goto(result.job.status==="rendered"?"gallery":"jobs")}catch(e){showToast(e.message,true)}}
 async function save(){try{draft.name=(E("device-name")?.value??draft.name).trim();draft.tray=E("tray")?.value||draft.tray;if(!draft.name)throw Error("Device name is required");if(draft.saved){goto("detail",draft.saved);return}const result=await post("/api/devices",{preset:draft.preset,name:draft.name,tray:draft.tray,model_id:draft.model_id,transport:draft.transport});draft.saved=result.device.id;await refresh();showToast("Profile saved · no OS queue installed");if(draft.step<5){draft.step=5;draw()}else goto("detail",draft.saved)}catch(e){showToast(e.message,true)}}
 document.addEventListener("click",async event=>{
@@ -222,6 +245,7 @@ if(k.startsWith("install:")||k.startsWith("uninstall:")){
     if(!confirm((removing?"Remove ":"Install ")+r.queue+(removing?" from":" into")+" "+state.platform+"? This changes a real operating-system printer queue and may require administrator privileges."))return;
     try{const reply=await post("/api/system/"+(removing?"uninstall":"install"),{preset:id,confirm:true});await refresh();showToast(reply.registration.status==="registered"?"OS printer installed and verified":"OS printer removed and verified")}catch(e){await refresh();showToast("OS registration error: "+e.message,true)}return
 }
+if(k.startsWith("tcp-"))return connectionAction(k);
 if(k.startsWith("flow-"))return studioAction(k);
 if(k==="studio-run"){
   const brother=E("studio-brother")?.value, zebra=E("studio-zebra")?.value;
@@ -310,4 +334,4 @@ document.addEventListener("change",e=>{
 E("theme").addEventListener("click",()=>{document.body.classList.toggle("dark");localStorage.setItem("devicehub-theme",document.body.classList.contains("dark")?"dark":"light")});
 if(localStorage.getItem("devicehub-theme")==="dark")document.body.classList.add("dark");
 refresh().catch(e=>E("page").innerHTML='<div class="notice warn">Unable to connect: '+clean(e.message)+'</div>');
-</script><script src="/studio.js"></script></body></html>
+</script><script src="/studio.js"></script><script src="/connections.js"></script></body></html>

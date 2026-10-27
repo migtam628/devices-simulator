@@ -34,6 +34,8 @@ def test_real_loopback_tcp_scale_protocol_and_live_weight(tmp_path):
         assert item["protocol"]=="sics_read_only_subset"
         port=item["port"]
         assert command(port,b"SI\r\n")==b"S S 0.000 kg\r\n"
+        probe=manager.probe(dev["id"])
+        assert probe["passed"] and probe["response_ascii"].startswith("S S 0.000 kg")
         store.simulate_scale_reading(dev["id"],{"gross_kg":2.5,"tare_kg":.5,"unit":"lb"})
         assert command(port,b"S\r\n")==b"S S 4.409 lb\r\n"
         store.simulate_scale_reading(dev["id"],{"gross_kg":1.5,"unit":"kg","stable":False})
@@ -122,6 +124,8 @@ def test_tcp_hub_api_authorization_and_profile_removal(tmp_path):
         assert status==200 and resp["connection"]["running"]
         port=resp["connection"]["port"]
         assert command(port,b"SI\r\n")==b"S S 0.000 kg\r\n"
+        status,resp=post("/api/connections/probe",{"device_id":dev["id"],"confirm":True})
+        assert status==200 and resp["probe"]["passed"]
         con.request("GET","/api/connections")
         r=con.getresponse()
         live=json.loads(r.read())

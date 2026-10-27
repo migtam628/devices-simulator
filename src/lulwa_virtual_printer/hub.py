@@ -418,6 +418,8 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                         return self.send(200, {"connection": connections.stop(device_id)})
                     if path == "/api/connections/fault":
                         return self.send(200, {"connection": connections.set_fault(device_id, payload.get("fault"))})
+                    if path == "/api/connections/probe":
+                        return self.send(200, {"probe": connections.probe(device_id)})
                     return self.send(404, {"error": "Unknown connection command"})
                 if path == "/api/studio/workflows/save":
                     return self.send(200, {"workflow": studio.save(payload)})
@@ -516,6 +518,13 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     server.hub_scale_hid = scale_hid
     server.hub_store = store
     server.hub_token = token
+    base_close = server.server_close
+    def close_all_services():
+        # Ensure no TCP listener remains after HTTP server shutdown, including
+        # in tests or third-party embedding that only calls server_close().
+        connections.stop_all()
+        base_close()
+    server.server_close = close_all_services
     return server
 
 

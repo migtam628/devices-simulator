@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import deque
 from datetime import datetime, timezone
+import socket
 import socketserver
 import threading
 
@@ -201,6 +202,26 @@ class ConnectionEngine:
                 adapter.running = False
                 server.server_close()
                 raise
+
+    def probe(self, device_id):
+        """Run a REAL TCP client self-test; not proof of 3rd-party compatibility."""
+        with self.lock:
+            adapter = self.adapters.get(device_id)
+            if adapter is None:
+                raise LookupError("No active TCP listener for this device")
+            port = adapter.server.server_address[1]
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+                client.settimeout(2)
+                client.sendall(b"SI\r\n")
+                reply = client.recv(128)
+        except OSError as exc:
+            raise RuntimeError("TCP loopback probe failed: " + type(exc).__name__) from exc
+        # A valid SICS-style response is expected for a healthy scale.
+        passed = reply.startswith((b"S S ", b"S D ", b"S +\r\n", b"S I\r\n"))
+        return {"device_id": device_id, "port": port, "test": "local_tcp_si",
+                "passed": passed, "response_ascii": reply.decode("ascii", "replace")[:100],
+                "note": "A loopback probe is not a verified third-party integration"}
 
     def set_fault(self, device_id, fault):
         if fault not in FAULTS or type(fault) is not str:
