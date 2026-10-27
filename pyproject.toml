@@ -23,4 +23,4 @@ lulwa-desktop = "lulwa_virtual_printer.desktop:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-lulwa_virtual_printer = ["ui/*.html", "ppd/*.ppd"]
+lulwa_virtual_printer = ["ui/*.html", "ui/*.js", "ppd/*.ppd"]
