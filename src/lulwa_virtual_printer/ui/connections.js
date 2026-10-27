@@ -57,7 +57,7 @@ function connections(){
      '<label class="field"><span>Tare kg</span><input id="serial-tare-'+clean(d.id)+'" type="number" min="0" step=".001" value="'+clean(last.tare_kg??0)+'"></label>'+
      '<label class="field"><span>Output units</span><select id="serial-unit-'+clean(d.id)+'">'+["kg","lb","g","oz"].map(u=>'<option '+(u===last.unit?"selected":"")+'>'+u+'</option>').join("")+'</select></label>'+
      '<label class="field"><span>Stable reading</span><select id="serial-stable-'+clean(d.id)+'"><option value="true" '+(last.stable!==false?"selected":"")+'>Yes</option><option value="false" '+(last.stable===false?"selected":"")+'>No</option></select></label></div>'+
-     '<div class="row wrap">'+button("Update serial weight","serial-weight:"+d.id,"primary")+'</div>'+
+     '<div class="row wrap">'+button("Update serial weight","serial-weight:"+d.id,"primary")+button("Test serial roundtrip","serial-probe:"+d.id)+'</div>'+
      '<label class="field mt"><span>Serial fault</span><select id="serial-fault-'+clean(d.id)+'">'+["none","busy","disconnect"].map(f=>'<option value="'+f+'" '+(listener.fault===f?"selected":"")+'>'+({none:"No fault",busy:"Busy reply",disconnect:"Silence / no reply"}[f])+'</option>').join("")+'</select></label>'+
      '<div class="row wrap">'+button("Apply fault","serial-fault:"+d.id)+button("Close serial port","serial-stop:"+d.id,"danger")+'</div>'+
      '<details class="conn-events"><summary>Serial activity ('+logs.length+' events)</summary><div class="conn-event-list">'+
@@ -126,6 +126,10 @@ async function serialAction(action){
    if(!confirm("Close this serial PTY path? Existing clients will lose the endpoint."))return;
    await post("/api/connections/serial-stop",{device_id:id,confirm:true});
    await refresh();showToast("Serial fixture stopped");return;
+  }
+  if(op==="probe"){
+   const result=await post("/api/connections/serial-probe",{device_id:id,confirm:true});
+   await refresh();showToast(result.probe.passed?"Serial PTY test OK: "+result.probe.response_ascii.trim():"Serial PTY roundtrip failed",!result.probe.passed);return;
   }
   if(op==="fault"){
    await post("/api/connections/serial-fault",{

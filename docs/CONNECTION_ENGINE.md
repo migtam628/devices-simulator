@@ -50,6 +50,7 @@ All POST operations require \`X-Devices-Token\`, already held in the local app. 
 | POST /api/connections/fault | device_id, fault=none/busy/disconnect, confirm=true | Simulate protocol errors and lost connections |
 | POST /api/connections/stop | device_id, confirm=true | Stop a previously started listener |
 | POST /api/connections/probe | device_id, confirm=true | Real TCP roundtrip from separate socket; not third-party compatibility proof |
+| POST /api/connections/serial-probe | device_id, confirm=true | Actual POSIX pseudo-terminal SI request and response validation |
 | POST /api/devices/{id}/scale-reading | gross_kg, tare_kg, unit, stable | Update the saved local weight fixture read by TCP |
 | GET /api/state | none | Includes \`connections\` snapshot for Hub UI |
 
@@ -100,3 +101,6 @@ Responses use the same limited stable/immediate weight conventions as TCP. Apply
 HTTP management actions: `POST /api/connections/serial-start`, `/serial-stop`, `/serial-fault` using `{device_id, confirm: true}`; fault also accepts `fault=none/busy/disconnect`. All require the Hub token. Serial ports do not start on reboot or app launch.
 
 Windows COM integration requires a separate signed driver or virtualization layer, so Windows does not falsely advertise an installed serial port.
+## v0.11.1 reliability checks
+
+Stopping a TCP listener actively shuts down its connected client sockets. The Connections dashboard also supports **Test serial roundtrip**, a local PTY client verification that opens the advertised device path, sends `SI`, and checks a real response. A successful self-test proves the local adapter works, not that a separate commercial application is supported. Both behaviors are regression-tested.

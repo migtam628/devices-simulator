@@ -56,3 +56,4 @@ def test_serial_controls_present_in_connections_view():
     for action in ("serial-start:", "serial-stop:", "serial-weight:", "serial-fault:"):
         assert action in text
     assert "function serialAction" in text
+    assert "serial-probe:" in text

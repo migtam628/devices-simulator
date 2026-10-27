@@ -37,6 +37,7 @@ class _ClientHandler(socketserver.StreamRequestHandler):
             adapter.record("capacity", "rejected")
             return
         adapter.connected(1)
+        adapter.register_socket(self.request, True)
         try:
             self.request.settimeout(8)
             while adapter.running:
@@ -67,6 +68,7 @@ class _ClientHandler(socketserver.StreamRequestHandler):
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     break
         finally:
+            adapter.register_socket(self.request, False)
             adapter.connected(-1)
             adapter.slots.release()
 
@@ -79,6 +81,7 @@ class _Adapter:
         self.lock = threading.RLock()
         self.events = deque(maxlen=60)
         self.clients = 0
+        self.sockets = set()
         self.requests = 0
         self.fault = "none"
         self.running = False
@@ -94,6 +97,24 @@ class _Adapter:
         with self.lock:
             self.clients += delta
             self.record("client", "connected" if delta > 0 else "disconnected")
+
+    def register_socket(self, sock, connected):
+        with self.lock:
+            if connected:
+                self.sockets.add(sock)
+            else:
+                self.sockets.discard(sock)
+
+    def disconnect_sockets(self):
+        # Close accepted clients during stop instead of leaving them blocked
+        # on a stale 8-second read timeout.
+        with self.lock:
+            sockets = tuple(self.sockets)
+        for sock in sockets:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
 
     def response(self, command):
         with self.lock:
@@ -247,6 +268,7 @@ class ConnectionEngine:
                 raise LookupError("No active TCP listener for this device")
             adapter.running = False
             adapter.record("listener", "stopping")
+            adapter.disconnect_sockets()
             adapter.server.shutdown()
             adapter.server.server_close()
             adapter.thread.join(timeout=3)
@@ -254,6 +276,9 @@ class ConnectionEngine:
 
     def start_serial(self, device_id):
         return self.serial.start(device_id)
+
+    def probe_serial(self, device_id):
+        return self.serial.probe(device_id)
 
     def stop_serial(self, device_id):
         return self.serial.stop(device_id)

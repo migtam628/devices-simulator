@@ -144,3 +144,17 @@ def test_tcp_hub_api_authorization_and_profile_removal(tmp_path):
         server.shutdown()
         server.server_close()
         worker.join(timeout=4)
+
+
+def test_stop_actively_disconnects_existing_tcp_client(tmp_path):
+    store,dev=scale_fixture(tmp_path)
+    engine=ConnectionEngine(store)
+    port=engine.start(dev["id"],0)["port"]
+    with socket.create_connection(("127.0.0.1",port),timeout=2) as client:
+        client.settimeout(3)
+        client.sendall(b"SI\r\n")
+        assert client.recv(128).startswith(b"S S 0.000")
+        engine.stop(dev["id"])
+        # Closing the virtual device should sever an existing socket promptly.
+        assert client.recv(128)==b""
+    assert engine.snapshot()["listeners"]==[]

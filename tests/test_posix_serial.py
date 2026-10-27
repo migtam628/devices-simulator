@@ -34,6 +34,8 @@ def test_real_pty_device_serial_commands_and_weight(tmp_path):
         item=engine.start_serial(d["id"])
         assert item["transport"]=="posix_pty"
         assert item["running"] and item["path"].startswith("/dev/")
+        probe=engine.serial.probe(d["id"])
+        assert probe["passed"] and probe["response_ascii"].startswith("S S 0.000 kg")
         fd=os.open(item["path"],os.O_RDWR|os.O_NOCTTY)
         try:
             assert serial_command(fd,b"SI\r\n")==b"S S 0.000 kg\r\n"

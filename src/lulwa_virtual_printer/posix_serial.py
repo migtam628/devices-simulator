@@ -129,6 +129,29 @@ class PosixSerialEngine:
                 adapter.close()
                 raise
 
+    def probe(self, device_id):
+        """Open a second OS file descriptor for a real PTY roundtrip."""
+        with self.lock:
+            adapter = self.adapters.get(device_id)
+            if not adapter or not adapter.running:
+                raise LookupError("No active serial scale fixture")
+            path = adapter.slave_path
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+            try:
+                os.write(fd, b"SI\r\n")
+                readable, _, _ = select.select([fd], [], [], 1.5)
+                reply = os.read(fd, 128) if readable else b""
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            raise RuntimeError("Local PTY test failed: " + type(exc).__name__) from exc
+        passed = reply.startswith((b"S S ", b"S D ", b"S +\r\n", b"S I\r\n"))
+        return {"device_id": device_id, "test": "local_pty_si",
+                "path": path, "passed": passed,
+                "response_ascii": reply.decode("ascii", "replace")[:100],
+                "note": "A local PTY probe is not proof of third-party software compatibility"}
+
     def fault(self, device_id, mode):
         if mode not in ("none", "busy", "disconnect") or type(mode) is not str:
             raise ValueError("Invalid serial fault mode")

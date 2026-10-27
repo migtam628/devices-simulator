@@ -89,6 +89,11 @@ Alongside the TCP adapter, Devices Simulator now supports an **opt-in POSIX pseu
 Another local program can open the generated `/dev/...` PTY path, send ASCII `S` or `SI`, and receive the same weight fixture values as the TCP adapter. Busy and silent-response faults are supported. This is **not a physical RS-232 port, USB CDC device, or Windows COM driver**. Windows serial emulation requires separate native work.
 
 See the [Connection Engine Guide](docs/CONNECTION_ENGINE.md) for PTY testing commands, platform boundaries and examples.
+## Connection reliability updates — v0.11.1
+
+The Connection Engine now closes existing TCP client sockets when a listener is stopped, rather than leaving those sessions waiting for their idle timeout. POSIX serial fixtures now include **Test serial roundtrip**, which opens the generated PTY from a separate file descriptor and checks the actual response.
+
+These are **local transport tests**. Neither TCP nor PTY self-tests certify external software compatibility, and the serial PTY is not Windows COM or USB hardware.
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
