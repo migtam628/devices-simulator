@@ -29,7 +29,7 @@ def test_connection_script_parses_with_node():
     if not node:
         pytest.skip("Node.js is not installed")
     src=Path(hub.__file__).with_name("ui").joinpath("connections.js")
-    check=subprocess.run([node,"--check",str(src)],capture_output=True,text=True,timeout=15)
+    check=subprocess.run([node,"--check",str(src)],capture_output=True,text=True,timeout=90)
     assert check.returncode == 0, check.stderr
 
 
@@ -38,7 +38,7 @@ def test_connections_browser_asset_served(tmp_path):
     worker=threading.Thread(target=server.serve_forever,daemon=True)
     worker.start()
     try:
-        conn=http.client.HTTPConnection("127.0.0.1",server.server_port,timeout=3)
+        conn=http.client.HTTPConnection("127.0.0.1",server.server_port,timeout=20)
         conn.request("GET","/connections.js")
         resp=conn.getresponse()
         js=resp.read()

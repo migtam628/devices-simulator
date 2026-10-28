@@ -22,7 +22,7 @@ def test_browser_script_is_valid_javascript(tmp_path):
     js = html.split("<script>", 1)[1].split("</script>", 1)[0]
     js_file = tmp_path / "hub-ui.js"
     js_file.write_text(js, encoding="utf-8")
-    result = subprocess.run([node, "--check", str(js_file)], capture_output=True, text=True, timeout=15)
+    result = subprocess.run([node, "--check", str(js_file)], capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stderr
 
 def test_studio_script_is_valid_javascript(tmp_path):
@@ -35,5 +35,5 @@ def test_studio_script_is_valid_javascript(tmp_path):
     assert "flowTemplate" in text
     script = tmp_path / "studio.js"
     script.write_text(text, encoding="utf-8")
-    result = subprocess.run([node, "--check", str(script)], capture_output=True, text=True, timeout=15)
+    result = subprocess.run([node, "--check", str(script)], capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stderr

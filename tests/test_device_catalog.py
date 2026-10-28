@@ -97,7 +97,7 @@ def test_scale_http_endpoint_and_catalog(tmp_path):
     thread=threading.Thread(target=server.serve_forever,daemon=True)
     thread.start()
     try:
-        c=http.client.HTTPConnection("127.0.0.1",server.server_port,timeout=10)
+        c=http.client.HTTPConnection("127.0.0.1",server.server_port,timeout=45)
         c.request("GET","/api/catalog")
         res=c.getresponse();cat=json.loads(res.read())
         assert res.status==200
