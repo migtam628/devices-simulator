@@ -101,6 +101,13 @@ External applications can now query **what the simulator actually supports** ove
 The replies identify the endpoint as `DEVICES_SIM` or `DevicesSimulator` and never claim real METTLER TOLEDO hardware. `SIR`, zero/tare commands, Windows COM, USB/HID, and BLE are **not yet implemented**. Discovery is designed to fail visibly for software needing unsupported commands rather than pretending compatibility.
 
 See [Connection Engine protocol and socket test guide](docs/CONNECTION_ENGINE.md).
+## v0.13.0 — Advanced Studio + real TCP scale integration
+
+Advanced Studio now includes an **External TCP Scale** node and template. Unlike the in-app Scale node, this one opens an actual TCP socket to a previously activated **localhost-only** scale endpoint in the Connections screen, sends a read-only `SI` command and consumes the returned measurement. It records the response in workflow history, fails clearly on missing listeners, busy/unstable/overload/disconnect states, and skips dependent steps.
+
+The node **never** starts a listener itself, accepts a custom host or port, reaches LAN/internet devices, changes a physical scale, or resolves the deferred CUPS issue. Only saved Network scale profiles and explicitly activated local listeners are eligible. Existing workflows continue using local fixtures unchanged.
+
+See [Advanced Studio guide](docs/ADVANCED_STUDIO.md) and [Connection Engine guide](docs/CONNECTION_ENGINE.md).
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

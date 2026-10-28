@@ -137,3 +137,8 @@ with socket.create_connection(("127.0.0.1", 12500), timeout=3) as s:
 Replace `12500` with your actual displayed port. The multi-line inventory also works over the macOS/Linux serial PTY path. Busy fault returns `I2 I` for an `I2` inquiry and `S I` for a scale weight read; Disconnect fault suppresses replies or closes the TCP client connection.
 
 **Not implemented:** streaming responses (`SIR`), zero/tare mutating commands (`Z`, `T`), full manufacturer-specific BC protocol, or OS-native USB/BLE/COM hardware. These require additional development and verification.
+## v0.13.0 — Studio workflow integration
+
+To use a managed TCP scale in Advanced Studio: (1) create a scale profile using **Network** transport; (2) explicitly start its localhost listener on Connections; (3) choose the Studio **External TCP Scale** template; (4) save and run. The node reads `SI` on a real socket bound to the selected device ID. The engine validates the socket reply and records it; it never contacts an arbitrary IP address or auto-starts listeners. Busy, unstable, overload and disconnect replies fail the node.
+
+This is an app-managed external-interface test, not proof of compatibility with proprietary software or hardware. No continuous stream, USB/BLE/Windows COM or production order integrations are implied.

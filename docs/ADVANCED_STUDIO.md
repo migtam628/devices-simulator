@@ -1,6 +1,6 @@
 # Advanced Studio — architecture and phased delivery
 
-**Status:** v0.9.0 local-first workflow editor and execution foundation.
+**Status:** v0.13.0 saved workflows, in-app fixtures and opt-in managed localhost TCP scale reads.
 
 ## Repository review
 
@@ -59,3 +59,18 @@ Limit 40 workflows, 24 nodes, 48 connections per graph. Exactly one Start and at
 Run: python3 -m pytest -q tests/test_studio_engine.py tests/test_hub_frontend.py
 
 Then run the full test suite. Manually validate drag, selection, save/reopen, connection editing, run reports and JPG opening on macOS and Windows. Automated tests do not replace desktop interaction checks.
+
+## v0.13.0 — External TCP Scale node
+
+The **External TCP Scale** template creates `Start → TCP Scale → Output` using an existing saved Network scale profile. Activate its TCP listener in the Connections page first. The node opens a **real socket** to that *existing*, device-id-bound `127.0.0.1` listener, requests `SI`, reads one bounded ASCII response, and validates a stable positive weight. There is no user-supplied host/port and no automatic adapter activation.
+
+- Response `S S 2.000 kg`: completed; downstream nodes receive `{value: 2, unit: 'kg', status: 'stable'}`.
+- Response `S D ...`: fails as unstable.
+- Response `S I`: fails as busy/unavailable.
+- Response `S +`: fails as over capacity.
+- No active listener, closed connection, malformed or oversized reply: fails; downstream nodes are skipped.
+- Runtime trace records localhost port, raw reply, execution status and weight. It does **not** assert third-party commercial-app compatibility.
+
+Existing `Scale` nodes still use in-app generated values. Captures continue using the local JPG engine; no CUPS/PrintNode/USB/BLE/remote-network requests are made by Studio.
+
+Local tests: `python3 -m pytest -q tests/test_studio_tcp.py` — covers real managed TCP socket, failure propagation, authorization and device validation.

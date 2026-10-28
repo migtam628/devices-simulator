@@ -520,8 +520,8 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     token = secrets.token_urlsafe(32)
     hid = MacBarcodeHID()
     scale_hid = MacScaleHID()
-    studio = StudioManager(Path(state_dir), store)
     connections = ConnectionEngine(store)
+    studio = StudioManager(Path(state_dir), store, connections=connections)
     server = ThreadingHTTPServer((host, port), make_handler(store, token, hid, scale_hid, studio, connections))
     server.hub_connections = connections
     server.hub_studio = studio

@@ -272,6 +272,59 @@ class ConnectionEngine:
                 "passed": passed, "response_ascii": reply.decode("ascii", "replace")[:100],
                 "note": "A loopback probe is not a verified third-party integration"}
 
+    def read_scale(self, device_id, command="SI"):
+        """Read through a REAL loopback socket, not direct HubStore state.
+
+        Uses only a previously activated adapter for the selected device.
+        Neither user-supplied hostnames nor arbitrary ports are accepted.
+        """
+        if command not in ("S", "SI"):
+            raise ValueError("Only read-only S or SI commands are allowed")
+        with self.lock:
+            adapter = self.adapters.get(device_id)
+            if not adapter or not adapter.running:
+                raise RuntimeError("Start this scale's TCP listener in Connections first")
+            port = adapter.server.server_address[1]
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+                client.settimeout(2)
+                client.sendall((command + "\r\n").encode("ascii"))
+                result = bytearray()
+                while len(result) <= 120:
+                    chunk = client.recv(1)
+                    if not chunk:
+                        raise RuntimeError("TCP scale disconnected without a reply")
+                    result.extend(chunk)
+                    if result.endswith(b"\n"):
+                        break
+                else:
+                    raise RuntimeError("TCP scale reply exceeded size limit")
+        except (OSError, TimeoutError) as exc:
+            raise RuntimeError("TCP scale read failed: " + type(exc).__name__) from exc
+        try:
+            reply = bytes(result).decode("ascii").strip()
+        except UnicodeDecodeError as exc:
+            raise RuntimeError("Non-ASCII TCP scale response") from exc
+        if reply == "S I":
+            raise RuntimeError("TCP scale is busy or does not have a stable weight")
+        if reply == "S +":
+            raise RuntimeError("TCP scale reported over capacity")
+        pieces = reply.split()
+        if len(pieces) != 4 or pieces[0] != "S" or pieces[1] not in ("S", "D") or pieces[3] not in ("kg", "lb", "g", "oz"):
+            raise RuntimeError("Unexpected TCP scale response")
+        if pieces[1] != "S":
+            raise RuntimeError("TCP scale reported an unstable reading")
+        import math
+        try:
+            weight = float(pieces[2])
+        except ValueError as exc:
+            raise RuntimeError("Malformed TCP scale weight") from exc
+        if not math.isfinite(weight) or weight < 0:
+            raise RuntimeError("Invalid TCP scale weight")
+        return {"value": weight, "unit": pieces[3], "status": "stable",
+                "transport": "tcp_loopback", "port": port, "command": command,
+                "raw_response": reply, "device_id": device_id}
+
     def set_fault(self, device_id, fault):
         if fault not in FAULTS or type(fault) is not str:
             raise ValueError("Fault must be none, busy or disconnect")
