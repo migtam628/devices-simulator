@@ -113,6 +113,9 @@ See [Advanced Studio guide](docs/ADVANCED_STUDIO.md) and [Connection Engine guid
 External clients can subscribe to **live 2 Hz weight reports** over an existing localhost scale listener using the simulator-specific `SUB` command. The server returns `SUB OK 500` followed by `EVT S S 2.000 kg`-style readings approximately every 500 ms. The client ends its subscription by closing the socket; stopping the listener also closes active client connections.
 
 **Important:** `SUB`/`EVT` is a **Devices Simulator extension**, not an implementation of METTLER TOLEDO `SIR` or an official product protocol. It works only on the TCP adapter in this milestone; POSIX serial remains request/response. Streaming requires manually activating the listener and does not broadcast to the LAN.
+## v0.13.2 — Windows test reliability
+
+Cross-platform automated checks now allow more realistic startup and HTTP response time on heavily loaded Windows CI runners. Node.js syntax checks and local Hub socket tests still assert their results; this change does not alter production TCP, serial or Studio behavior. The functional milestones remain **v0.13.0** (Studio-to-TCP workflow) and **v0.13.1** (opt-in 2Hz TCP weight stream).
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
