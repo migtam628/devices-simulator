@@ -142,3 +142,20 @@ Replace `12500` with your actual displayed port. The multi-line inventory also w
 To use a managed TCP scale in Advanced Studio: (1) create a scale profile using **Network** transport; (2) explicitly start its localhost listener on Connections; (3) choose the Studio **External TCP Scale** template; (4) save and run. The node reads `SI` on a real socket bound to the selected device ID. The engine validates the socket reply and records it; it never contacts an arbitrary IP address or auto-starts listeners. Busy, unstable, overload and disconnect replies fail the node.
 
 This is an app-managed external-interface test, not proof of compatibility with proprietary software or hardware. No continuous stream, USB/BLE/Windows COM or production order integrations are implied.
+## v0.13.1 — TCP subscription (Devices Simulator extension)
+
+To stream readings from a separate TCP client, send ASCII `SUB\r\n` to an **already active** 127.0.0.1 scale listener. The server acknowledges `SUB OK 500\r\n` and emits one `EVT ` line about every 500 ms. This is a simulator-specific protocol, *not* MT-SICS `SIR` or a model-specific proprietary scale command.
+
+```python
+import socket
+with socket.create_connection(("127.0.0.1", 12500), timeout=3) as client:
+    client.settimeout(4)
+    client.sendall(b"SUB\r\n")
+    with client.makefile("rb") as data:
+        for _ in range(6):
+            print(data.readline().decode('ascii').strip())
+```
+
+The first line is `SUB OK 500`. Later lines look like `EVT S S 1.250 kg`, `EVT S D 1.250 kg` (unstable), `EVT S +` (over-capacity), or `EVT S I` (busy). Close the socket to stop your subscription. The server ends the subscription when an injected Disconnect fault occurs or when the listener is stopped. Max eight simultaneous clients per listener; per-client socket writes time out.
+
+The continuous stream is currently **TCP only**, is not auto-started, does not send arbitrary network traffic, and does not mutate scale state. Full MT-SICS `SIR` / POSIX serial push streaming requires separate protocol validation.

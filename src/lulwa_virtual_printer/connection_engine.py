@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import socket
 import socketserver
 import threading
+import time
 
 from .device_catalog import BY_ID
 
@@ -62,6 +63,26 @@ class _ClientHandler(socketserver.StreamRequestHandler):
                     break
                 if not command or len(command) > 16:
                     adapter.record("invalid_frame", "closed")
+                    break
+                if command == "SUB":
+                    # Devices Simulator extension, NOT MT-SICS SIR.
+                    # 2Hz continuous output until the client disconnects
+                    # or the user stops this opt-in listener.
+                    adapter.record("SUB", "started")
+                    try:
+                        self.wfile.write(b"SUB OK 500\r\n")
+                        self.wfile.flush()
+                        while adapter.running:
+                            response = adapter.response("SI")
+                            if response is None:
+                                break
+                            self.wfile.write(("EVT " + response + "\r\n").encode("ascii"))
+                            self.wfile.flush()
+                            time.sleep(0.5)
+                    except (OSError, TimeoutError, BrokenPipeError, ConnectionResetError):
+                        pass
+                    finally:
+                        adapter.record("SUB", "stopped")
                     break
                 response = adapter.response(command)
                 if response is None:

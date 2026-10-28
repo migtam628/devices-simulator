@@ -108,6 +108,11 @@ Advanced Studio now includes an **External TCP Scale** node and template. Unlike
 The node **never** starts a listener itself, accepts a custom host or port, reaches LAN/internet devices, changes a physical scale, or resolves the deferred CUPS issue. Only saved Network scale profiles and explicitly activated local listeners are eligible. Existing workflows continue using local fixtures unchanged.
 
 See [Advanced Studio guide](docs/ADVANCED_STUDIO.md) and [Connection Engine guide](docs/CONNECTION_ENGINE.md).
+## v0.13.1 — Live TCP scale subscriptions
+
+External clients can subscribe to **live 2 Hz weight reports** over an existing localhost scale listener using the simulator-specific `SUB` command. The server returns `SUB OK 500` followed by `EVT S S 2.000 kg`-style readings approximately every 500 ms. The client ends its subscription by closing the socket; stopping the listener also closes active client connections.
+
+**Important:** `SUB`/`EVT` is a **Devices Simulator extension**, not an implementation of METTLER TOLEDO `SIR` or an official product protocol. It works only on the TCP adapter in this milestone; POSIX serial remains request/response. Streaming requires manually activating the listener and does not broadcast to the LAN.
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
