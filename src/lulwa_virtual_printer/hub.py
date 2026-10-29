@@ -431,6 +431,16 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                     return self.send(404, {"error": "Unknown connection command"})
                 if path == "/api/studio/workflows/save":
                     return self.send(200, {"workflow": studio.save(payload)})
+                if path == "/api/studio/workflows/export":
+                    return self.send(200, {"document": studio.export_workflow(payload.get("id"))})
+                if path == "/api/studio/workflows/import":
+                    return self.send(200, {"workflow": studio.import_workflow(
+                        payload.get("document"), payload.get("device_map"))})
+                if path == "/api/studio/workflows/replay":
+                    if payload.get("confirm") is not True:
+                        return self.send(400, {"error": "Replay requires explicit confirmation of fresh execution"})
+                    return self.send(200, {"run": studio.run(
+                        payload.get("id"), replay_run_id=payload.get("run_id"))})
                 if path == "/api/studio/workflows/delete":
                     return self.send(200, {"deleted": studio.delete(payload.get("id"))})
                 if path == "/api/studio/workflows/execute":

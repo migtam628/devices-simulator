@@ -16,6 +16,9 @@ from pathlib import Path
 NODE_KINDS = ("start", "barcode", "scale", "tcp_scale", "serial_scale", "capture", "output")
 MAX_NODES = 24
 MAX_EDGES = 48
+EXPORT_FORMAT = "devices-simulator-studio"
+EXPORT_VERSION = 1
+MAX_IMPORT_BYTES = 64 * 1024
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
 LABEL_RE = re.compile(r"^[^\x00-\x1f]{1,80}$")
 DEVICE_KINDS = {"scale": {"scale"}, "capture": {"office_printer", "label_printer", "scanner"}}
@@ -203,6 +206,54 @@ class StudioManager:
             self._write(data)
             return copy.deepcopy(saved)
 
+
+    def export_workflow(self, workflow_id):
+        """Portable graph only: exclude local persistence metadata, runs and outputs."""
+        with self.lock:
+            workflow = next((w for w in self._read()["workflows"] if w["id"] == workflow_id), None)
+            if not workflow:
+                raise LookupError("Workflow not found")
+            return {"format": EXPORT_FORMAT, "version": EXPORT_VERSION,
+                    "workflow": {"name": workflow["name"],
+                                 "nodes": copy.deepcopy(workflow["nodes"]),
+                                 "edges": copy.deepcopy(workflow["edges"])}}
+
+    def import_workflow(self, document, device_map=None):
+        """Revalidate all nodes/transports and create a NEW saved workflow."""
+        if not isinstance(document, dict):
+            raise ValueError("Import must be a JSON object")
+        try:
+            encoded = json.dumps(document, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Import must contain valid JSON data") from exc
+        if len(encoded) > MAX_IMPORT_BYTES:
+            raise ValueError("Import exceeds 64 KB limit")
+        if document.get("format") != EXPORT_FORMAT or type(document.get("version")) is not int or document["version"] != EXPORT_VERSION:
+            raise ValueError("Unsupported Studio import format or version")
+        if not isinstance(document.get("workflow"), dict):
+            raise ValueError("Import is missing a workflow graph")
+        mapping = {} if device_map is None else device_map
+        if not isinstance(mapping, dict) or len(mapping) > MAX_NODES:
+            raise ValueError("Device mapping must be a bounded object")
+        if any(not isinstance(k, str) or not isinstance(v, str)
+               or len(k) > 80 or len(v) > 80 for k, v in mapping.items()):
+            raise ValueError("Invalid device mapping identifiers")
+        graph = copy.deepcopy(document["workflow"])
+        if not isinstance(graph.get("nodes"), list):
+            raise ValueError("Import requires a node list")
+        for node in graph["nodes"]:
+            if not isinstance(node, dict):
+                raise ValueError("Invalid imported node")
+            cfg = node.get("config")
+            if isinstance(cfg, dict) and "device_id" in cfg:
+                ident = cfg["device_id"]
+                if not isinstance(ident, str):
+                    raise ValueError("Invalid imported device identifier")
+                cfg["device_id"] = mapping.get(ident, ident)
+        normalized = validate_workflow(graph, self.hub.list_devices())
+        return self.save({"name": normalized["name"], "nodes": normalized["nodes"],
+                          "edges": normalized["edges"]})
+
     def delete(self, workflow_id):
         with self.lock:
             data = self._read()
@@ -213,18 +264,30 @@ class StudioManager:
             self._write(data)
             return True
 
-    def run(self, workflow_id):
-        """Execute in graph order; TCP scale nodes contact only managed loopback listeners."""
+    def run(self, workflow_id, replay_run_id=None):
+        """Execute current or historically snapshotted graph using FRESH fixtures."""
         with self.lock:
             data = self._read()
             workflow = next((w for w in data["workflows"] if w["id"] == workflow_id), None)
             if not workflow:
                 raise LookupError("Workflow not found")
+            source = None
+            if replay_run_id is not None:
+                if not isinstance(replay_run_id, str) or not ID_RE.fullmatch(replay_run_id):
+                    raise ValueError("Invalid replay run identifier")
+                source = next((r for r in data["runs"] if r["id"] == replay_run_id
+                               and r["workflow_id"] == workflow_id), None)
+                if source is None:
+                    raise LookupError("Run not found for this workflow")
+                if not isinstance(source.get("workflow_snapshot"), dict):
+                    raise ValueError("This older run has no snapshot and cannot be replayed")
+            execution = source["workflow_snapshot"] if source else workflow
+            executed_revision = source.get("workflow_revision") if source else workflow["revision"]
             run_id = uuid.uuid4().hex
             started = now()
             trace = []
             try:
-                graph = validate_workflow(workflow, self.hub.list_devices())
+                graph = validate_workflow(execution, self.hub.list_devices())
                 nodes = {n["id"]: n for n in graph["nodes"]}
                 parents = {nid: [] for nid in nodes}
                 for edge in graph["edges"]:
@@ -303,12 +366,18 @@ class StudioManager:
                 status = "failed"
                 trace = [{"node_id": "validation", "type": "validation", "status": "failed",
                           "detail": str(exc)[:200]}]
+            # Retain source graph, not output artifacts or prior results.
+            graph_snapshot = {"name": execution["name"],
+                              "nodes": copy.deepcopy(execution["nodes"]),
+                              "edges": copy.deepcopy(execution["edges"])}
             # Keep history bounded even for repeated workflow runs.
-            record = {"id": run_id, "workflow_id": workflow_id, "name": workflow["name"],
+            record = {"id": run_id, "workflow_id": workflow_id, "name": execution["name"],
                       "status": status, "started_at": started, "finished_at": now(), "steps": trace,
-                      "mode": ("local_fixture_and_managed_tcp_serial" if {"tcp_scale", "serial_scale"} <= {n["type"] for n in workflow["nodes"]}
-                               else "local_fixture_and_managed_tcp" if any(n["type"] == "tcp_scale" for n in workflow["nodes"])
-                               else "local_fixture_and_managed_posix_serial" if any(n["type"] == "serial_scale" for n in workflow["nodes"])
+                      "workflow_snapshot": graph_snapshot, "workflow_revision": executed_revision,
+                      "replayed_from": replay_run_id,
+                      "mode": ("local_fixture_and_managed_tcp_serial" if {"tcp_scale", "serial_scale"} <= {n["type"] for n in execution["nodes"]}
+                               else "local_fixture_and_managed_tcp" if any(n["type"] == "tcp_scale" for n in execution["nodes"])
+                               else "local_fixture_and_managed_posix_serial" if any(n["type"] == "serial_scale" for n in execution["nodes"])
                                else "local_fixture_only")}
             data["runs"].insert(0, record)
             data["runs"] = data["runs"][:80]
