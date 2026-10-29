@@ -7,13 +7,14 @@ const flowTypes={
   barcode:{label:"Barcode",icon:"▥",caption:"Sample barcode data",color:"indigo"},
   scale:{label:"Scale",icon:"⚖",caption:"Local weight fixture",color:"teal"},
   tcp_scale:{label:"TCP Scale",icon:"◎",caption:"Real localhost scale read",color:"teal"},
+  serial_scale:{label:"Serial Scale",icon:"↔",caption:"Real local PTY weight read",color:"teal"},
   capture:{label:"Capture",icon:"▤",caption:"Printer / scanner → JPG",color:"purple"},
   output:{label:"Output",icon:"▧",caption:"Review run results",color:"green"}
 };
 const flowId=()=>("node_"+Math.random().toString(36).slice(2,10));
 const flowList=()=>state.studio?.workflows||[];
 const flowRuns=()=>state.studio?.runs||[];
-const flowDeviceOptions=(k,id)=>state.devices.filter(d=>k==="tcp_scale"?d.category==="scale"&&d.transport==="network":k==="scale"?d.category==="scale":["brother","zebra","scanner"].includes(d.preset)).map(d=>
+const flowDeviceOptions=(k,id)=>state.devices.filter(d=>k==="tcp_scale"?d.category==="scale"&&d.transport==="network":k==="serial_scale"?d.category==="scale"&&d.transport==="serial":k==="scale"?d.category==="scale":["brother","zebra","scanner"].includes(d.preset)).map(d=>
   '<option value="'+clean(d.id)+'" '+(id===d.id?"selected":"")+'>'+clean(d.name)+'</option>').join("");
 function flowTemplate(){
  const brother=state.devices.find(d=>d.preset==="brother"),zebra=state.devices.find(d=>d.preset==="zebra"),scale=state.devices.find(d=>d.category==="scale");
@@ -49,7 +50,7 @@ function flowSync(){
  const cfg=node.config;
  const read=(id)=>E(id)?.value;
  if(node.type==="barcode"&&E("flow-barcode"))cfg.value=read("flow-barcode");
- if(node.type==="tcp_scale"&&E("flow-device"))cfg.device_id=read("flow-device");
+ if((node.type==="tcp_scale"||node.type==="serial_scale")&&E("flow-device"))cfg.device_id=read("flow-device");
  if(node.type==="capture"){
    if(E("flow-device"))cfg.device_id=read("flow-device");
    if(E("flow-job-title"))cfg.title=read("flow-job-title");
@@ -66,7 +67,7 @@ function flowCard(n){
  const t=flowTypes[n.type];
  const d=state.devices.find(x=>x.id===n.config?.device_id);
  const subtitle=d?d.name:n.type==="barcode"?(n.config.value||"Test data"):
-     (n.type==="scale"||n.type==="tcp_scale")?"Choose a saved scale":n.type==="capture"?"Choose a saved printer":"Local in-app step";
+     (n.type==="scale"||n.type==="tcp_scale"||n.type==="serial_scale")?"Choose a saved scale":n.type==="capture"?"Choose a saved printer":"Local in-app step";
  return '<div class="flow-node '+t.color+(flowSelected===n.id?" selected":"")+'" data-flow-node="'+clean(n.id)+'" style="left:'+n.x+'px;top:'+n.y+'px">'+
  '<div class="flow-grab" role="button" tabindex="0" aria-label="Select '+clean(t.label)+' node" data-flow-drag="'+clean(n.id)+'" data-action="flow-select:'+clean(n.id)+'"><span class="flow-node-icon">'+t.icon+'</span><span><b>'+t.label+'</b><small>'+clean(t.caption)+'</small></span><span class="flow-drag-handle" aria-hidden="true">⠿</span></div>'+
  '<div class="flow-node-foot">'+clean(subtitle)+'</div><span class="flow-port in" aria-hidden="true"></span><span class="flow-port out" aria-hidden="true"></span></div>';
@@ -89,9 +90,10 @@ function flowNodeInspector(){
  const t=flowTypes[n.type],c=n.config||{};
  let fields='<p class="small">This node runs entirely inside Devices Simulator. It does not register physical hardware.</p>';
  if(n.type==="barcode")fields='<label class="field"><span>Sample barcode value</span><input id="flow-barcode" maxlength="80" value="'+clean(c.value||"TEST-1001")+'"></label><p class="small">Fixture data only — no keyboard/HID events.</p>';
- if(n.type==="capture"||n.type==="scale"||n.type==="tcp_scale"){
-  fields='<label class="field"><span>Saved '+((n.type==="scale"||n.type==="tcp_scale")?"scale":"printer / scanner")+'</span><select id="flow-device">'+flowDeviceOptions(n.type,c.device_id)+'</select></label>';
+ if(n.type==="capture"||n.type==="scale"||n.type==="tcp_scale"||n.type==="serial_scale"){
+  fields='<label class="field"><span>Saved '+((n.type==="scale"||n.type==="tcp_scale"||n.type==="serial_scale")?"scale":"printer / scanner")+'</span><select id="flow-device">'+flowDeviceOptions(n.type,c.device_id)+'</select></label>';
   if(n.type==="tcp_scale") fields+='<p class="small">Uses a real localhost TCP socket. Activate this scale in Connections first; no physical hardware or remote host is accessed.</p>';
+  if(n.type==="serial_scale") fields+='<p class="small">Opens an activated local macOS/Linux PTY from Connections. Stop SUB streaming before running. Not USB or Windows COM.</p>';
   if(n.type==="capture") fields+='<label class="field"><span>Capture title</span><input id="flow-job-title" maxlength="80" value="'+clean(c.title||"Studio Capture")+'"></label><p class="small">Produces local JPGs. Bypasses CUPS and real OS queues.</p>';
   if(n.type==="scale") fields+='<div class="grid two"><label class="field"><span>Gross kg</span><input type="number" min="0" step="0.001" id="flow-gross" value="'+clean(c.gross_kg??1.25)+'"></label><label class="field"><span>Tare kg</span><input type="number" min="0" step="0.001" id="flow-tare" value="'+clean(c.tare_kg??0)+'"></label><label class="field"><span>Unit</span><select id="flow-unit">'+["kg","lb","g","oz"].map(u=>'<option '+(c.unit===u?"selected":"")+'>'+u+'</option>').join("")+'</select></label><label class="field"><span>Stability</span><select id="flow-stable"><option value="true" '+(c.stable!==false?"selected":"")+'>Stable</option><option value="false" '+(c.stable===false?"selected":"")+'>Unstable</option></select></label></div><p class="small">Tare-adjusted reading; no physical USB/BLE/network request.</p>';
  }
@@ -116,13 +118,13 @@ function studioPage(){
  }
  const library='<div class="flow-library"><div class="flow-panel-head"><b>My workflows</b>'+button("+ New","flow-new","primary")+'</div>'+
  (flowList().length?flowList().map(w=>'<button class="flow-library-item '+(flowDraft?.id===w.id?"active":"")+'" data-action="flow-open:'+clean(w.id)+'"><b>'+clean(w.name)+'</b><small>'+w.nodes.length+' nodes · revision '+w.revision+'</small></button>').join(""):'<div class="flow-library-empty">No saved workflows yet. Start with a local test template.</div>')+
- '<div class="flow-library-bottom"><b>Templates</b>'+button("Shipping Station","flow-template")+button("External TCP Scale","flow-network-template")+'<p class="small">Templates bind to existing saved fixtures.</p></div></div>';
+ '<div class="flow-library-bottom"><b>Templates</b>'+button("Shipping Station","flow-template")+button("External TCP Scale","flow-network-template")+button("External Serial Scale","flow-serial-template")+'<p class="small">Templates bind to existing saved fixtures.</p></div></div>';
  if(!flowDraft)return heading("ADVANCED DEVICE STUDIO","Visual workflow builder","Connect local device fixtures and inspect each step. Nothing is sent to physical devices.")+
  '<div class="flow-layout">'+library+'<div class="flow-welcome"><div class="flow-welcome-symbol">◇</div><h2>Design a repeatable device workflow</h2><p>Connect sample barcode input, a simulated scale, one or more printer captures, and an output check. Every run produces auditable local results.</p>'+
- button("Create from template","flow-template","primary")+button("External TCP Scale","flow-network-template")+' '+button("Blank workflow","flow-new")+'</div></div>';
+ button("Create from template","flow-template","primary")+button("External TCP Scale","flow-network-template")+button("External Serial Scale","flow-serial-template")+' '+button("Blank workflow","flow-new")+'</div></div>';
  const chosen=flowDraft.nodes.find(n=>n.id===flowSelected);
  const buttons='<div class="row wrap">'+button("Save","flow-save","primary")+button("Run locally","flow-run","",false)+button("Duplicate","flow-duplicate")+button("Delete","flow-delete","danger",!flowDraft.id)+'</div>';
- return heading("ADVANCED DEVICE STUDIO","Visual workflow builder","Editable DAG · local fixtures and opt-in TCP scale adapters",badge("Local-only engine","green"))+
+ return heading("ADVANCED DEVICE STUDIO","Visual workflow builder","Editable DAG · local fixtures and opt-in TCP/serial scale adapters",badge("Local-only engine","green"))+
  '<div class="flow-layout">'+library+
  '<section class="flow-workspace"><div class="flow-toolbar"><label class="field"><span>Workflow name</span><input id="flow-title" maxlength="80" value="'+clean(flowDraft.name)+'"></label>'+
  '<div class="row wrap">'+buttons+'</div></div>'+
@@ -133,7 +135,7 @@ function studioPage(){
  '<div class="flow-editor-footer">Drag a node by its header · Select a node to configure · Link nodes with Connect from here · Save before running.</div>'+
  '<div class="flow-history"><h2>Run history</h2>'+flowHistory()+'</div></section>'+
  '<aside class="flow-inspector card"><h2>Node inspector</h2>'+flowNodeInspector()+
- '<div class="flow-safety"><b>Simulation boundary</b><p>Runs use local fixtures and existing 127.0.0.1 TCP scale listeners. No drivers, physical USB/BLE, remote IPs or OS print jobs.</p></div></aside></div>';
+ '<div class="flow-safety"><b>Simulation boundary</b><p>Runs use local fixtures and existing localhost TCP/PTY scale endpoints. No drivers, physical USB/BLE, Windows COM, remote IPs or OS print jobs.</p></div></aside></div>';
 }
 async function flowSaveDraft(){
  flowSync();
@@ -156,6 +158,17 @@ async function studioAction(k){
             {source:nodes[1].id,target:nodes[2].id}]};
    flowSelected=nodes[1].id;flowConnect=null;draw();return;
   }
+  if(k==="flow-serial-template"){
+   const d=state.devices.find(x=>x.category==="scale"&&x.transport==="serial");
+   if(!d)return showToast("Create an RS-232 / serial scale profile first",true);
+   const nodes=[{id:flowId(),type:"start",x:40,y:190,config:{}},
+     {id:flowId(),type:"serial_scale",x:330,y:190,config:{device_id:d.id}},
+     {id:flowId(),type:"output",x:650,y:190,config:{}}];
+   flowDraft={name:"External Serial Scale QA",nodes,
+     edges:[{source:nodes[0].id,target:nodes[1].id},
+            {source:nodes[1].id,target:nodes[2].id}]};
+   flowSelected=nodes[1].id;flowConnect=null;draw();return;
+  }
   if(k==="flow-new"||k==="flow-template"){
    flowDraft=k==="flow-template"?flowTemplate():{name:"Untitled Workflow",nodes:[
     {id:flowId(),type:"start",x:70,y:220,config:{}},
@@ -168,7 +181,7 @@ async function studioAction(k){
   if(k==="flow-save"){await flowSaveDraft();showToast("Workflow saved");return}
   if(k==="flow-run"){
    const saved=await flowSaveDraft();
-   if(!confirm("Run this workflow against local fixtures? Printer/scan steps will create JPG files. TCP nodes will contact a previously activated 127.0.0.1 scale listener; no physical hardware or external hosts are accessed."))return;
+   if(!confirm("Run this workflow against local fixtures? Printer/scan steps will create JPG files. TCP/serial nodes will contact previously activated local scale endpoints; no physical hardware or external hosts are accessed."))return;
    const response=await post("/api/studio/workflows/execute",{id:saved.id});
    await refresh();showToast(response.run.status==="completed"?"Local workflow completed":"Workflow had failed or skipped steps",response.run.status!=="completed");
    return;
@@ -190,6 +203,7 @@ async function studioAction(k){
    const cfg={};
    if(kind==="barcode")cfg.value="TEST-1001";
    if(kind==="tcp_scale"){const d=state.devices.find(d=>d.category==="scale"&&d.transport==="network");if(!d)return showToast("Create a Network scale first",true);cfg.device_id=d.id}
+   if(kind==="serial_scale"){const d=state.devices.find(d=>d.category==="scale"&&d.transport==="serial");if(!d)return showToast("Create an RS-232 / serial scale first",true);cfg.device_id=d.id}
    if(kind==="scale"){const d=state.devices.find(d=>d.category==="scale");if(!d)return showToast("Create a scale fixture first",true);Object.assign(cfg,{device_id:d.id,gross_kg:1.25,tare_kg:0,unit:"kg",stable:true})}
    if(kind==="capture"){const d=state.devices.find(d=>["brother","zebra","scanner"].includes(d.preset));if(!d)return showToast("Create a printer or scanner fixture first",true);Object.assign(cfg,{device_id:d.id,title:"Studio Capture"})}
    const n={id:flowId(),type:kind,x:70+(flowDraft.nodes.length%5)*220,y:75+Math.floor(flowDraft.nodes.length/5)*145,config:cfg};

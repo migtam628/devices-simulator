@@ -122,6 +122,12 @@ macOS/Linux virtual serial scale ports now support a **simulator-specific `SUB` 
 
 Unlike TCP, a POSIX pseudo-terminal is a **shared serial path**, not a per-client socket: multiple open applications could see the same stream, and the emulator cannot reliably detect individual client disconnects. Streaming never begins automatically and a non-reading client cannot block the worker indefinitely. This is not MT-SICS `SIR`, USB HID, Bluetooth, or Windows COM hardware. See the [Connection Engine guide](docs/CONNECTION_ENGINE.md).
 
+## v0.13.4 — Advanced Studio managed serial scale reads
+
+Advanced Studio now has an **External Serial Scale** template and a **Serial Scale** workflow node on macOS/Linux. Create a saved RS-232/serial scale profile, manually activate its virtual serial (PTY) endpoint in **Connections**, then open the template, save and run. Studio opens the existing OS PTY and reads one bounded `SI` response, recording the raw reply and weight in workflow history. Missing listeners, busy/unstable/overload states and timeouts fail cleanly, skipping downstream steps.
+
+A POSIX PTY is **shared**: stop any `SUB` stream using `UNSUB` before running the workflow and avoid simultaneous clients. No Windows COM driver, physical USB/BLE device, arbitrary serial paths or OS print jobs are created by this milestone. Existing TCP and local fixture workflows remain unchanged. See [Advanced Studio](docs/ADVANCED_STUDIO.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

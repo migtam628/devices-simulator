@@ -5,6 +5,7 @@ open the path as a serial port and send S/SI from the MT-SICS-style subset.
 """
 from __future__ import annotations
 
+import math
 import os
 import select
 import threading
@@ -28,6 +29,7 @@ class _SerialAdapter(_Adapter):
         self.stream_next = 0.0
         self.stream_deadline = 0.0
         self.stream_events = 0
+        self.read_lock = threading.Lock()
 
     def snapshot(self):
         with self.lock:
@@ -220,6 +222,80 @@ class PosixSerialEngine:
                 "path": path, "passed": passed,
                 "response_ascii": reply.decode("ascii", "replace")[:100],
                 "note": "A local PTY probe is not proof of third-party software compatibility"}
+
+    def read_scale(self, device_id):
+        """One bounded SI roundtrip via an active, device-bound POSIX PTY."""
+        with self.lock:
+            adapter = self.adapters.get(device_id)
+            if not adapter or not adapter.running:
+                raise RuntimeError("Start this scale's serial fixture in Connections first")
+            path = adapter.slave_path
+        if not adapter.read_lock.acquire(timeout=2.5):
+            raise RuntimeError("Serial scale is busy with another Studio read")
+        try:
+            with adapter.lock:
+                if not adapter.running:
+                    raise RuntimeError("Serial scale fixture stopped")
+                if adapter.streaming:
+                    raise RuntimeError("Serial scale is streaming; send UNSUB before running Studio")
+            fd = None
+            try:
+                fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+                if os.write(fd, b"SI\r\n") != 4:
+                    raise RuntimeError("Incomplete serial scale command write")
+                deadline = time.monotonic() + 2.0
+                received = bytearray()
+                while len(received) < 128:
+                    if not adapter.running:
+                        raise RuntimeError("Serial scale fixture stopped during read")
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RuntimeError("Serial scale timed out waiting for SI reply")
+                    ready, _, _ = select.select([fd], [], [], min(remaining, 0.25))
+                    if not ready:
+                        continue
+                    try:
+                        data = os.read(fd, 128 - len(received))
+                    except BlockingIOError:
+                        continue
+                    if not data:
+                        raise RuntimeError("Serial scale disconnected without a reply")
+                    received.extend(data)
+                    if b"\n" in received:
+                        break
+                if b"\n" not in received:
+                    raise RuntimeError("Serial scale reply exceeded size limit")
+            except OSError as exc:
+                raise RuntimeError("Local serial scale read failed: " + type(exc).__name__) from exc
+            finally:
+                if fd is not None:
+                    os.close(fd)
+            try:
+                raw = bytes(received).split(b"\n", 1)[0].decode("ascii").strip()
+            except UnicodeDecodeError as exc:
+                raise RuntimeError("Non-ASCII serial scale response") from exc
+            if raw.startswith("EVT "):
+                raise RuntimeError("Serial scale stream frame received; stop SUB before Studio")
+            if raw == "S I":
+                raise RuntimeError("Serial scale is busy or has no stable reading")
+            if raw == "S +":
+                raise RuntimeError("Serial scale reported over capacity")
+            parts = raw.split()
+            if len(parts) != 4 or parts[0] != "S" or parts[1] not in ("S", "D") or parts[3] not in ("kg", "lb", "g", "oz"):
+                raise RuntimeError("Unexpected serial scale response")
+            if parts[1] == "D":
+                raise RuntimeError("Serial scale reported an unstable reading")
+            try:
+                weight = float(parts[2])
+            except ValueError as exc:
+                raise RuntimeError("Malformed serial scale weight") from exc
+            if not math.isfinite(weight) or weight < 0:
+                raise RuntimeError("Invalid serial scale weight")
+            return {"value": weight, "unit": parts[3], "status": "stable",
+                    "transport": "posix_pty", "path": path, "command": "SI",
+                    "raw_response": raw, "device_id": device_id}
+        finally:
+            adapter.read_lock.release()
 
     def fault(self, device_id, mode):
         if mode not in ("none", "busy", "disconnect") or type(mode) is not str:

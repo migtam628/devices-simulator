@@ -1,8 +1,7 @@
 """Local-only Advanced Studio graph storage, validation and execution.
 
-The Studio uses in-app fixtures, with one opt-in TCP scale read through an
-already-running localhost adapter. No arbitrary external hosts, OS queues,
-USB/BLE APIs, or third-party commands are allowed.
+The Studio uses in-app fixtures and managed opt-in TCP/POSIX serial reads
+through existing local adapters, not arbitrary hosts or device paths.
 """
 from __future__ import annotations
 
@@ -14,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-NODE_KINDS = ("start", "barcode", "scale", "tcp_scale", "capture", "output")
+NODE_KINDS = ("start", "barcode", "scale", "tcp_scale", "serial_scale", "capture", "output")
 MAX_NODES = 24
 MAX_EDGES = 48
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
@@ -86,6 +85,12 @@ def validate_workflow(payload, devices):
             device = device_map.get(ident_dev)
             if not device or device.get("category") != "scale" or device.get("transport") != "network":
                 raise ValueError("TCP scale node requires an existing scale with Network transport")
+            normalized = {"device_id": ident_dev}
+        elif kind == "serial_scale":
+            ident_dev = config.get("device_id")
+            device = device_map.get(ident_dev)
+            if not device or device.get("category") != "scale" or device.get("transport") != "serial":
+                raise ValueError("Serial scale node requires an existing scale with RS-232 / serial transport")
             normalized = {"device_id": ident_dev}
         elif kind == "capture":
             ident_dev = config.get("device_id")
@@ -263,6 +268,13 @@ class StudioManager:
                             payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
                                                  "status": reading["status"]}
                             detail = f"TCP scale read over localhost:{reading['port']}: {reading['raw_response']}"
+                        elif kind == "serial_scale":
+                            if self.connections is None:
+                                raise RuntimeError("Connection Engine not available")
+                            reading = self.connections.read_serial_scale(cfg["device_id"])
+                            payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
+                                                 "status": reading["status"]}
+                            detail = f"Serial scale read over local PTY {reading['path']}: {reading['raw_response']}"
                         elif kind == "capture":
                             job = self.hub.test_device(cfg["device_id"], title=cfg["title"])
                             if job["status"] != "rendered":
@@ -279,7 +291,7 @@ class StudioManager:
                         if kind == "capture":
                             completed["job_id"] = job["id"]
                             completed["images"] = job.get("images", [])
-                        if kind in ("scale", "tcp_scale"):
+                        if kind in ("scale", "tcp_scale", "serial_scale"):
                             completed["weight"] = payload["weight"]
                         trace.append(completed)
                     except (ValueError, LookupError, RuntimeError, OSError) as exc:
@@ -294,7 +306,10 @@ class StudioManager:
             # Keep history bounded even for repeated workflow runs.
             record = {"id": run_id, "workflow_id": workflow_id, "name": workflow["name"],
                       "status": status, "started_at": started, "finished_at": now(), "steps": trace,
-                      "mode": "local_fixture_and_managed_tcp" if any(n["type"] == "tcp_scale" for n in workflow["nodes"]) else "local_fixture_only"}
+                      "mode": ("local_fixture_and_managed_tcp_serial" if {"tcp_scale", "serial_scale"} <= {n["type"] for n in workflow["nodes"]}
+                               else "local_fixture_and_managed_tcp" if any(n["type"] == "tcp_scale" for n in workflow["nodes"])
+                               else "local_fixture_and_managed_posix_serial" if any(n["type"] == "serial_scale" for n in workflow["nodes"])
+                               else "local_fixture_only")}
             data["runs"].insert(0, record)
             data["runs"] = data["runs"][:80]
             self._write(data)

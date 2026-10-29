@@ -178,3 +178,7 @@ The stream sends at most **2 events/sec**, with a hard cap of **60 weight events
 A PTY is shared, not associated with a socket/client identity. All processes opening the same virtual serial path could receive the stream; the adapter cannot infer each client's departure. For this reason, no stream starts automatically and every subscription is time-bounded. Unread output triggers backpressure handling and terminates the stream rather than hanging the worker. A Disconnect fault suppresses further events; a Busy fault emits `EVT S I`. `SUB` and `UNSUB` are not advertised as supported MT-SICS commands in `I0`.
 
 This is a **local fixture for software testing**, not a validated integration with any manufacturer or scale model.
+
+## v0.13.4 — Studio-driven POSIX serial reads
+
+Advanced Studio can open an **already-running** POSIX PTY scale fixture using the new `serial_scale` node. It sends one bounded `SI` and parses a stable reply. The node never starts listeners or accepts arbitrary paths, and run history shows the actual local PTY and response. Stop `SUB` streaming before executing: PTYs are shared and concurrent consumers may interfere. Fault injections fail the node and skip its dependencies. Supported on macOS/Linux; not Windows COM, USB/BLE hardware or a certified vendor protocol.
