@@ -8,6 +8,12 @@ from __future__ import annotations
 import os
 import select
 import threading
+import time
+
+# A short-lived simulator-only protocol; NOT MT-SICS SIR.
+SERIAL_STREAM_INTERVAL = 0.5
+SERIAL_STREAM_MAX_SECONDS = 30.0
+SERIAL_STREAM_MAX_EVENTS = 60
 
 from .connection_engine import _Adapter, MAX_COMMAND
 
@@ -18,6 +24,10 @@ class _SerialAdapter(_Adapter):
         self.slave_fd = None
         self.slave_path = None
         self.thread = None
+        self.streaming = False
+        self.stream_next = 0.0
+        self.stream_deadline = 0.0
+        self.stream_events = 0
 
     def snapshot(self):
         with self.lock:
@@ -25,24 +35,66 @@ class _SerialAdapter(_Adapter):
                     "transport": "posix_pty", "protocol": "sics_read_only_subset",
                     "path": self.slave_path, "fault": self.fault,
                     "requests": self.requests, "events": list(self.events),
+                    "streaming": self.streaming, "stream_events": self.stream_events,
                     "warning": "POSIX pseudo-terminal only; not a USB or Windows COM port"}
+
+    def _write_line(self, response):
+        # Never let an unread PTY indefinitely block the adapter's worker.
+        packet = response.encode("ascii") + b"\r\n"
+        try:
+            if os.write(self.master_fd, packet) == len(packet):
+                return True
+        except (OSError, BlockingIOError):
+            pass
+        self.record("serial", "write_backpressure")
+        return False
+
+    def _end_stream(self, reason, signal=False):
+        with self.lock:
+            self.streaming = False
+            self.record("SUB", reason)
+        if signal:
+            self._write_line("EVT END LIMIT")
+
+    def _tick_stream(self):
+        if not self.streaming:
+            return
+        now = time.monotonic()
+        if now < self.stream_next:
+            return
+        if now >= self.stream_deadline or self.stream_events >= SERIAL_STREAM_MAX_EVENTS:
+            self._end_stream("expired", signal=True)
+            return
+        reply = self.response("SI")
+        if reply is None:
+            self._end_stream("disconnected")
+            return
+        if not self._write_line("EVT " + reply):
+            self._end_stream("backpressure")
+            return
+        with self.lock:
+            self.stream_events += 1
+            self.stream_next = now + SERIAL_STREAM_INTERVAL
 
     def serve(self):
         pending = bytearray()
         try:
             while self.running:
+                # A single thread owns both serial responses and timed events:
+                # command replies cannot be interleaved at the byte level.
+                delay = 0.2
+                if self.streaming:
+                    delay = min(delay, max(0.0, self.stream_next - time.monotonic()))
                 try:
-                    readable, _, _ = select.select([self.master_fd], [], [], 0.2)
-                    if not readable:
-                        continue
-                    data = os.read(self.master_fd, 256)
+                    readable, _, _ = select.select([self.master_fd], [], [], delay)
+                    data = os.read(self.master_fd, 256) if readable else b""
+                except BlockingIOError:
+                    data = b""
                 except (OSError, ValueError):
                     if not self.running:
                         break
                     self.record("serial", "io_error")
                     break
-                if not data:
-                    continue
                 for byte in data:
                     if byte == 10:
                         raw = bytes(pending).rstrip(b"\r")
@@ -57,23 +109,39 @@ class _SerialAdapter(_Adapter):
                             continue
                         if not command:
                             continue
+                        if command == "SUB":
+                            # PTY has no per-client identity. SUB controls a
+                            # shared, bounded stream; UNSUB stops it explicitly.
+                            if self._write_line("SUB OK 500"):
+                                now = time.monotonic()
+                                with self.lock:
+                                    self.streaming = True
+                                    self.stream_next = now
+                                    self.stream_deadline = now + SERIAL_STREAM_MAX_SECONDS
+                                    self.stream_events = 0
+                                    self.record("SUB", "started")
+                            continue
+                        if command == "UNSUB":
+                            if self.streaming:
+                                self._end_stream("stopped")
+                            self._write_line("UNSUB OK")
+                            continue
                         response = self.response(command)
                         if response is None:
                             # PTYs have no independent client socket to close:
                             # disconnect injection suppresses replies here.
                             continue
-                        try:
-                            os.write(self.master_fd, response.encode("ascii") + b"\r\n")
-                        except OSError:
-                            self.record("serial", "write_error")
-                            break
+                        self._write_line(response)
                     elif len(pending) < MAX_COMMAND + 1:
                         pending.append(byte)
                     else:
                         # Bound memory and require the next newline to recover.
                         pending = bytearray(b"X" * (MAX_COMMAND + 1))
+                self._tick_stream()
         finally:
-            self.running = False
+            with self.lock:
+                self.streaming = False
+                self.running = False
 
     def close(self):
         self.running = False
@@ -116,6 +184,7 @@ class PosixSerialEngine:
                 master, slave = os.openpty()
                 adapter.master_fd, adapter.slave_fd = master, slave
                 tty.setraw(slave)
+                os.set_blocking(master, False)
                 adapter.slave_path = os.ttyname(slave)
                 adapter.running = True
                 thread = threading.Thread(target=adapter.serve, daemon=True,

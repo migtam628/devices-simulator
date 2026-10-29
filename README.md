@@ -116,6 +116,12 @@ External clients can subscribe to **live 2 Hz weight reports** over an existing 
 ## v0.13.2 — Windows test reliability
 
 Cross-platform automated checks now allow more realistic startup and HTTP response time on heavily loaded Windows CI runners. Node.js syntax checks and local Hub socket tests still assert their results; this change does not alter production TCP, serial or Studio behavior. The functional milestones remain **v0.13.0** (Studio-to-TCP workflow) and **v0.13.1** (opt-in 2Hz TCP weight stream).
+## v0.13.3 — bounded POSIX serial live-weight subscriptions
+
+macOS/Linux virtual serial scale ports now support a **simulator-specific `SUB` / `UNSUB` stream** alongside their existing read-only `S`, `SI` and discovery commands. `SUB` acknowledges `SUB OK 500`, then emits `EVT S S ...` readings at up to 2 Hz. `UNSUB` stops the stream. Each subscription expires automatically after 30 seconds or 60 events, whichever comes first, and sends `EVT END LIMIT` when possible. Reissue `SUB` to begin another bounded session.
+
+Unlike TCP, a POSIX pseudo-terminal is a **shared serial path**, not a per-client socket: multiple open applications could see the same stream, and the emulator cannot reliably detect individual client disconnects. Streaming never begins automatically and a non-reading client cannot block the worker indefinitely. This is not MT-SICS `SIR`, USB HID, Bluetooth, or Windows COM hardware. See the [Connection Engine guide](docs/CONNECTION_ENGINE.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
