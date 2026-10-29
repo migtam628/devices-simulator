@@ -361,6 +361,126 @@ class StudioManager:
             self._write(data)
             return True
 
+    def _iter_execution(self, graph):
+        """Yield exactly one executed, skipped, or inactive node per next().
+        
+        Shared by normal runs and manually gated debugging sessions. A suspended
+        generator cannot progress unless its caller explicitly advances it.
+        """
+        trace = []
+        nodes = {n["id"]: n for n in graph["nodes"]}
+        incoming = {nid: [] for nid in nodes}
+        for edge in graph["edges"]:
+            incoming[edge["target"]].append(edge)
+        results = {}
+        for nid in graph["order"]:
+            node = nodes[nid]
+            prev = []
+            blocked = False
+            for edge in incoming[nid]:
+                parent = results[edge["source"]]
+                if parent["status"] in ("failed", "skipped"):
+                    blocked = True
+                elif parent["status"] == "completed":
+                    branch = edge.get("branch")
+                    if branch is None or parent.get("decision") == (branch == "true"):
+                        prev.append(parent)
+            if blocked:
+                results[nid] = {"status": "skipped"}
+                trace.append({"node_id": nid, "type": node["type"], "status": "skipped",
+                              "detail": "Upstream step did not complete"})
+                yield copy.deepcopy(trace[-1])
+                continue
+            if incoming[nid] and not prev:
+                results[nid] = {"status": "inactive"}
+                trace.append({"node_id": nid, "type": node["type"], "status": "inactive",
+                              "detail": "Condition branch was not selected"})
+                yield copy.deepcopy(trace[-1])
+                continue
+            payload = {"barcode": None, "weight": None, "captures": []}
+            for item in prev:
+                previous = item.get("data", {})
+                if previous.get("barcode") is not None:
+                    payload["barcode"] = previous["barcode"]
+                if previous.get("weight") is not None:
+                    payload["weight"] = previous["weight"]
+                payload["captures"].extend(previous.get("captures", []))
+            kind, cfg = node["type"], node["config"]
+            try:
+                detail = ""
+                if kind == "start":
+                    detail = "Local sample event started"
+                elif kind == "barcode":
+                    payload["barcode"] = cfg["value"]
+                    detail = "Barcode fixture supplied test data (no keyboard event)"
+                elif kind == "scale":
+                    reading = self.hub.simulate_scale_reading(cfg["device_id"], cfg)
+                    payload["weight"] = {"value": reading["weight"], "unit": reading["unit"],
+                                         "status": reading["status"]}
+                    if reading["status"] != "stable":
+                        raise ValueError("Scale reading is " + reading["status"])
+                    detail = f"Local scale fixture: {reading['weight']} {reading['unit']}"
+                elif kind == "tcp_scale":
+                    if self.connections is None:
+                        raise RuntimeError("Connection Engine not available")
+                    reading = self.connections.read_scale(cfg["device_id"])
+                    payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
+                                         "status": reading["status"]}
+                    detail = f"TCP scale read over localhost:{reading['port']}: {reading['raw_response']}"
+                elif kind == "serial_scale":
+                    if self.connections is None:
+                        raise RuntimeError("Connection Engine not available")
+                    reading = self.connections.read_serial_scale(cfg["device_id"])
+                    payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
+                                         "status": reading["status"]}
+                    detail = f"Serial scale read over local PTY {reading['path']}: {reading['raw_response']}"
+                elif kind == "condition":
+                    if cfg["field"] == "weight":
+                        reading = payload["weight"]
+                        if reading is None or reading.get("status") != "stable":
+                            raise ValueError("Weight condition requires an upstream stable scale reading")
+                        actual = reading["value"]
+                        decision = actual >= cfg["value"] if cfg["operator"] == "gte" else actual < cfg["value"]
+                        detail = f"Weight {actual} {reading['unit']} {cfg['operator']} {cfg['value']} = {decision}"
+                    else:
+                        actual = payload["barcode"]
+                        if actual is None:
+                            raise ValueError("Barcode condition requires an upstream barcode")
+                        decision = (actual == cfg["value"] if cfg["operator"] == "equals"
+                                    else cfg["value"] in actual)
+                        detail = f"Barcode condition {cfg['operator']} {cfg['value']!r} = {decision}"
+                elif kind == "capture":
+                    job = self.hub.test_device(cfg["device_id"], title=cfg["title"])
+                    if job["status"] != "rendered":
+                        raise ValueError(job.get("error", "Document capture failed"))
+                    payload["captures"].append({"job_id": job["id"],
+                                                "images": job.get("images", []),
+                                                "profile": job["profile"]})
+                    detail = f"{len(job.get('images', []))} JPG page(s) captured locally"
+                elif kind == "output":
+                    detail = f"{len(payload['captures'])} capture job(s) in run"
+                results[nid] = {"status": "completed", "data": payload}
+                if kind == "condition":
+                    results[nid]["decision"] = decision
+                completed = {"node_id": nid, "type": kind, "status": "completed",
+                             "detail": detail}
+                if kind == "condition":
+                    completed["decision"] = decision
+                    completed["selected_branch"] = "true" if decision else "false"
+                if kind == "capture":
+                    completed["job_id"] = job["id"]
+                    completed["images"] = job.get("images", [])
+                if kind in ("scale", "tcp_scale", "serial_scale"):
+                    completed["weight"] = payload["weight"]
+                trace.append(completed)
+            except (ValueError, LookupError, RuntimeError, OSError) as exc:
+                results[nid] = {"status": "failed"}
+                trace.append({"node_id": nid, "type": kind, "status": "failed",
+                              "detail": str(exc)[:200]})
+            yield copy.deepcopy(trace[-1])
+        status = "completed" if all(t["status"] in ("completed", "inactive") for t in trace) else "failed"
+        return trace, status
+
     def run(self, workflow_id, replay_run_id=None):
         """Execute current or historically snapshotted graph using FRESH fixtures."""
         with self.lock:
@@ -385,114 +505,13 @@ class StudioManager:
             trace = []
             try:
                 graph = validate_workflow(execution, self.hub.list_devices())
-                nodes = {n["id"]: n for n in graph["nodes"]}
-                incoming = {nid: [] for nid in nodes}
-                for edge in graph["edges"]:
-                    incoming[edge["target"]].append(edge)
-                results = {}
-                for nid in graph["order"]:
-                    node = nodes[nid]
-                    prev = []
-                    blocked = False
-                    for edge in incoming[nid]:
-                        parent = results[edge["source"]]
-                        if parent["status"] in ("failed", "skipped"):
-                            blocked = True
-                        elif parent["status"] == "completed":
-                            branch = edge.get("branch")
-                            if branch is None or parent.get("decision") == (branch == "true"):
-                                prev.append(parent)
-                    if blocked:
-                        results[nid] = {"status": "skipped"}
-                        trace.append({"node_id": nid, "type": node["type"], "status": "skipped",
-                                      "detail": "Upstream step did not complete"})
-                        continue
-                    if incoming[nid] and not prev:
-                        results[nid] = {"status": "inactive"}
-                        trace.append({"node_id": nid, "type": node["type"], "status": "inactive",
-                                      "detail": "Condition branch was not selected"})
-                        continue
-                    payload = {"barcode": None, "weight": None, "captures": []}
-                    for item in prev:
-                        previous = item.get("data", {})
-                        if previous.get("barcode") is not None:
-                            payload["barcode"] = previous["barcode"]
-                        if previous.get("weight") is not None:
-                            payload["weight"] = previous["weight"]
-                        payload["captures"].extend(previous.get("captures", []))
-                    kind, cfg = node["type"], node["config"]
+                cursor = self._iter_execution(graph)
+                while True:
                     try:
-                        detail = ""
-                        if kind == "start":
-                            detail = "Local sample event started"
-                        elif kind == "barcode":
-                            payload["barcode"] = cfg["value"]
-                            detail = "Barcode fixture supplied test data (no keyboard event)"
-                        elif kind == "scale":
-                            reading = self.hub.simulate_scale_reading(cfg["device_id"], cfg)
-                            payload["weight"] = {"value": reading["weight"], "unit": reading["unit"],
-                                                 "status": reading["status"]}
-                            if reading["status"] != "stable":
-                                raise ValueError("Scale reading is " + reading["status"])
-                            detail = f"Local scale fixture: {reading['weight']} {reading['unit']}"
-                        elif kind == "tcp_scale":
-                            if self.connections is None:
-                                raise RuntimeError("Connection Engine not available")
-                            reading = self.connections.read_scale(cfg["device_id"])
-                            payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
-                                                 "status": reading["status"]}
-                            detail = f"TCP scale read over localhost:{reading['port']}: {reading['raw_response']}"
-                        elif kind == "serial_scale":
-                            if self.connections is None:
-                                raise RuntimeError("Connection Engine not available")
-                            reading = self.connections.read_serial_scale(cfg["device_id"])
-                            payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
-                                                 "status": reading["status"]}
-                            detail = f"Serial scale read over local PTY {reading['path']}: {reading['raw_response']}"
-                        elif kind == "condition":
-                            if cfg["field"] == "weight":
-                                reading = payload["weight"]
-                                if reading is None or reading.get("status") != "stable":
-                                    raise ValueError("Weight condition requires an upstream stable scale reading")
-                                actual = reading["value"]
-                                decision = actual >= cfg["value"] if cfg["operator"] == "gte" else actual < cfg["value"]
-                                detail = f"Weight {actual} {reading['unit']} {cfg['operator']} {cfg['value']} = {decision}"
-                            else:
-                                actual = payload["barcode"]
-                                if actual is None:
-                                    raise ValueError("Barcode condition requires an upstream barcode")
-                                decision = (actual == cfg["value"] if cfg["operator"] == "equals"
-                                            else cfg["value"] in actual)
-                                detail = f"Barcode condition {cfg['operator']} {cfg['value']!r} = {decision}"
-                        elif kind == "capture":
-                            job = self.hub.test_device(cfg["device_id"], title=cfg["title"])
-                            if job["status"] != "rendered":
-                                raise ValueError(job.get("error", "Document capture failed"))
-                            payload["captures"].append({"job_id": job["id"],
-                                                        "images": job.get("images", []),
-                                                        "profile": job["profile"]})
-                            detail = f"{len(job.get('images', []))} JPG page(s) captured locally"
-                        elif kind == "output":
-                            detail = f"{len(payload['captures'])} capture job(s) in run"
-                        results[nid] = {"status": "completed", "data": payload}
-                        if kind == "condition":
-                            results[nid]["decision"] = decision
-                        completed = {"node_id": nid, "type": kind, "status": "completed",
-                                     "detail": detail}
-                        if kind == "condition":
-                            completed["decision"] = decision
-                            completed["selected_branch"] = "true" if decision else "false"
-                        if kind == "capture":
-                            completed["job_id"] = job["id"]
-                            completed["images"] = job.get("images", [])
-                        if kind in ("scale", "tcp_scale", "serial_scale"):
-                            completed["weight"] = payload["weight"]
-                        trace.append(completed)
-                    except (ValueError, LookupError, RuntimeError, OSError) as exc:
-                        results[nid] = {"status": "failed"}
-                        trace.append({"node_id": nid, "type": kind, "status": "failed",
-                                      "detail": str(exc)[:200]})
-                status = "completed" if all(t["status"] in ("completed", "inactive") for t in trace) else "failed"
+                        next(cursor)
+                    except StopIteration as done:
+                        trace, status = done.value
+                        break
             except ValueError as exc:
                 status = "failed"
                 trace = [{"node_id": "validation", "type": "validation", "status": "failed",
