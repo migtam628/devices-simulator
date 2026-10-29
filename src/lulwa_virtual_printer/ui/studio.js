@@ -199,6 +199,7 @@ function studioPage(){
  (flowConnect?'<div class="notice">Connecting from <b>'+clean(flowConnect)+'</b>. Click another node as the destination. '+button("Cancel","flow-link-cancel")+'</div>':"")+
  '<div class="flow-canvas-viewport"><div class="flow-canvas" id="flow-canvas">'+flowWires()+flowDraft.nodes.map(flowCard).join("")+'</div></div>'+
  '<div class="flow-editor-footer">Drag an output port to an input port, or use the inspector destination selector. Undo/redo supports 40 edits. Save before running.</div>'+
+ '<div class="flow-inspection"><h2>Live step debugger</h2>'+flowLivePanel()+'</div>'+
  '<div class="flow-inspection"><h2>Read-only workflow debugger</h2>'+flowInspectionPanel()+'</div>'+
  '<div class="flow-history"><h2>Run history</h2>'+flowHistory()+'</div></section>'+
  '<aside class="flow-inspector card"><h2>Node inspector</h2>'+flowNodeInspector()+flowDebugPanel()+
@@ -214,6 +215,7 @@ async function flowSaveDraft(){
 }
 async function studioAction(k){
  try{
+  if(k.startsWith("flow-live-"))return await flowLiveAction(k);
   if(k==="flow-inspect"||k.startsWith("flow-inspect-")||k.startsWith("flow-checkpoint:")){
    return await flowInspectionAction(k);
   }
