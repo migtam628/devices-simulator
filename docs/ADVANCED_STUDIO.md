@@ -1,6 +1,6 @@
 # Advanced Studio — architecture and phased delivery
 
-**Status:** v0.13.5 managed TCP/serial workflows, portable JSON export/import, and confirmed snapshot replay.
+**Status:** v0.13.6 managed TCP/serial workflows, portable exchange/replay and improved visual graph editing.
 
 ## Repository review
 
@@ -13,7 +13,7 @@ The previous Studio was a hardcoded four-node illustration with a two-printer de
 | A | Persistent graph schema, cycle/device validation, safe execution order | Implemented |
 | B | Editable canvas, draggable nodes, connections and device bindings | Implemented |
 | C | In-app run engine, error propagation, execution logs, JPG links | Implemented |
-| D | Port-to-port drag linking, richer node templates, workflow export/import, run replay | Portable JSON and replay implemented; richer linking/templates planned |
+| D | Port-to-port drag linking, richer node templates, workflow export/import, run replay | Port linking, JSON and replay implemented; richer templates planned |
 | E | Managed TCP and POSIX serial reads, conditions/timers and external hooks | TCP/serial reads implemented; other actions planned |
 | F | Certified virtual USB/BLE hardware integration and enterprise policies | Requires native development |
 
@@ -96,3 +96,15 @@ Tests: `python3 -m pytest -q tests/test_studio_serial.py tests/test_studio_tcp.p
 - Backend format and run history changes are backward-compatible; old runs remain readable but cannot be replayed.
 
 Tests: `python3 -m pytest -q tests/test_studio_portability.py`; run the full suite and inspect the import/download UI manually before production use.
+
+## v0.13.6 — Advanced Workflow Editor
+
+**Canvas and links:** Every eligible node has visible, accessible input/output port buttons. Drag from an output port to an input port to create a directed edge. Alternatively, click an output and choose a destination on the canvas, or use the selected node's inspector destination dropdown plus **Add connection**. Links fail visibly if they would create a cycle, duplicate an edge, link into Start or out of Output, link a node to itself, or exceed 48 edges. This is a client-side convenience check: the existing backend still validates reachability and topology when saving. Live paths follow nodes during dragging.
+
+**Editing history:** Undo/redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y keyboard shortcuts apply outside text-edit controls. Up to 40 snapshots are retained per opened draft; redo is cleared by a new edit. Edits include node additions/removal, changes to connections, positioning, name and inspector settings after sync. The workflow's saved ID and revision are preserved across undo/redo, and opening a different workflow or template resets editing history. Ordinary native undo remains available while typing into inputs.
+
+**Run diagnostics:** Run History provides **Inspect run** for saved graph snapshots. For a matching current draft, node borders indicate completed, failed or skipped states; the inspector shows counts, selected-step details and recorded errors. If the draft differs from the historical graph, the tool deliberately suppresses node coloring and tells the user why. Inspection does not replay or execute anything, and no printer/scale traffic occurs.
+
+**Testing:** `python3 -m pytest -q tests/test_studio_editor.py` uses the actual Studio JavaScript in a Node VM for graph linking, history restoration, limit checks, port markup and run diagnostics; it also checks local HTTP asset serving. Run the full suite, then manually exercise pointer interactions, keyboard alternatives, dark mode and touch devices on Windows/macOS/Linux. UI tests are not physical-device compatibility certification.
+
+**Deferred:** Branch conditions, breakpoints, arbitrary external software hooks, signed installers, OS-native USB/BLE/Windows COM and end-to-end CUPS/PrintNode field verification remain separate tasks.
