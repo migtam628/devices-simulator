@@ -53,7 +53,7 @@ const ctx={
  lastToast:null
 };
 vm.createContext(ctx);
-for(const name of ["studio.js","studio_editor.js"])
+for(const name of ["studio.js","studio_editor.js","studio_debugger.js"])
  vm.runInContext(fs.readFileSync(process.argv[1]+"/"+name,"utf8"),ctx,{filename:name});
 const execute=script=>vm.runInContext(script,ctx);
 execute('flowDraft={id:"saved-id",revision:7,name:"QA",nodes:['+
