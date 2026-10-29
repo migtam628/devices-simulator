@@ -12,6 +12,7 @@ def test_ui_is_packaged_and_contains_required_views():
     assert "device-name" in html
     assert "file_base64" in html
     assert 'src="/studio.js"' in html
+    assert 'src="/studio_debugger.js"' in html
 
 
 def test_browser_script_is_valid_javascript(tmp_path):

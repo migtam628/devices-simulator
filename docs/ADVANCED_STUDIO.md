@@ -1,6 +1,6 @@
 # Advanced Studio — architecture and phased delivery
 
-**Status:** v0.13.7 conditional weight/barcode routing with explicit TRUE/FALSE branch decisions.
+**Status:** v0.13.8 adds a read-only preflight debugger and step inspection with explicit execution boundaries.
 
 ## Repository review
 
@@ -12,7 +12,7 @@ The previous Studio was a hardcoded four-node illustration with a two-printer de
 |---|---|---|
 | A | Persistent graph schema, cycle/device validation, safe execution order | Implemented |
 | B | Editable canvas, draggable nodes, connections and device bindings | Implemented |
-| C | In-app run engine, error propagation, execution logs, JPG links | Implemented |
+| C | In-app run engine, error propagation, execution logs, JPG links | Implemented; read-only inspection/step walkthrough added in v0.13.8 |
 | D | Port-to-port drag linking, richer node templates, workflow export/import, run replay | Port linking, JSON and replay implemented; richer templates planned |
 | E | Managed TCP and POSIX serial reads, conditions/timers and external hooks | TCP/serial and conditional graph routing implemented; timers/hooks planned |
 | F | Certified virtual USB/BLE hardware integration and enterprise policies | Requires native development |
@@ -51,6 +51,7 @@ The state file is studio_workflows.json under the Hub state directory (default ~
 | POST /api/studio/workflows/export | Authenticated workflow ID to portable JSON document |
 | POST /api/studio/workflows/import | Authenticated JSON document and optional device_map; saves NEW workflow |
 | POST /api/studio/workflows/replay | Authenticated id + run_id + confirm=true, fresh snapshot execution |
+| POST /api/studio/workflows/inspect | Authenticated read-only validation and step plan of unsaved graph with optional checkpoint IDs |
 | GET /api/state | Includes Studio snapshot for editor |
 
 All POST requests require the existing local X-Devices-Token header, and the Hub is loopback-only. No arbitrary executable code, file paths or external URLs are allowed as node actions.
@@ -118,3 +119,15 @@ Tests: `python3 -m pytest -q tests/test_studio_portability.py`; run the full sui
 - **Testing:** `python3 -m pytest -q tests/test_studio_conditions.py tests/test_studio_conditional_ui.py` plus the full suite. Desktop UI manual checks are still needed, especially drag/touch interactions and OS-specific executable behavior.
 
 **Not included:** generic scripting, timed conditions, webhook triggers, multi-condition expression builders, OS-native drivers, real physical printer operation, or certified scale protocol compatibility.
+
+## v0.13.8 — Read-only preflight and step inspection
+
+**Inspect plan** is available before saving or executing a Studio workflow. The POST `/api/studio/workflows/inspect` endpoint requires the existing local X-Devices-Token header and a graph object in `workflow`. The optional `checkpoints` list has at most 24 distinct, valid, existing node IDs. Invalid graph shapes, disconnected nodes, invalid devices, cycles, missing condition branches and invalid checkpoints are rejected before a plan is returned.
+
+The response includes a deterministic topological order, each node's incoming/outgoing edges (and true/false branch labels), action description, whether a real run could write local state, and whether an active managed TCP/POSIX serial adapter would be needed. Condition decisions remain unknown until execution. The inspection is **read-only**, does not call scale simulation/read APIs, does not write Studio state, does not create JPG files, and does not start/stop any adapter.
+
+The Studio panel provides a **walkthrough cursor** with Previous/Next step, direct step selection, canvas selection/highlighting, and togglable review checkpoints. Those checkpoints are annotations, **not execution breakpoints**. They cannot pause an actual workflow and do not persist as runtime state. Editing the draft invalidates the currently displayed inspection, preventing stale plans from appearing current. The user must separately Save and confirm Run locally for actual fixture/capture/managed-adapter operations.
+
+**Tests:** `python3 -m pytest -q tests/test_studio_preflight.py` covers side-effect-free inspection, branch and device flags, input/checkpoint validation, authenticated HTTP access and the actual three-script browser logic using Node.js.
+
+**Still planned:** controlled live pause/resume with safe device side-effect boundaries, debugger breakpoints at runtime, low-level OS printing verification, drivers, packaging and signed native installers. This milestone makes no claim of deterministic future branch outcomes or actual hardware compatibility.

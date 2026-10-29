@@ -152,6 +152,14 @@ Use **Weight Routing** or **Barcode Routing** in Studio to create a ready-to-edi
 
 The server still validates the DAG: missing or duplicate branch labels, invalid values, cycles, and unsupported node actions are rejected. Conditions never start TCP/serial adapters, print to physical devices, execute scripts, or bypass local-only restrictions. For tests and known limitations see [Advanced Studio](docs/ADVANCED_STUDIO.md).
 
+## v0.13.8 — Read-only workflow debugger and execution preflight
+
+Advanced Studio adds an **Inspect plan** button that validates a draft workflow without saving it or performing a device operation. The local authenticated preflight API returns the real topological order, dependencies and conditional links, and identifies actions that **would** generate JPGs, update local fixtures, or read an already-active TCP/PTY adapter if the workflow were executed. It does **not** activate listeners, create jobs, poll scales, write run records, or modify saved workflows.
+
+The inspection panel provides **Previous/Next step**, direct step selection, canvas highlighting and optional **review checkpoints**. These are **not** live breakpoints: stepping through the plan never performs any operation. If you edit the graph after inspecting, the prior plan is marked stale and highlighting is suppressed until you inspect again. The original Run locally and Replay actions continue to require their own explicit confirmations.
+
+New endpoint: authenticated `POST /api/studio/workflows/inspect` with `{"workflow": {name, nodes, edges}, "checkpoints": ["node_id"]}`, returning `{"inspection": ...}` as a read-only result. The same backend validation applies to unsaved, imported, and saved graphs. This is a safe preflight debugger, **not** pausable/resumable live execution. See [Advanced Studio](docs/ADVANCED_STUDIO.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

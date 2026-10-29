@@ -10,6 +10,7 @@ function flowSnapshot(){
 }
 function flowResetHistory(){
  flowUndoStack=[];flowRedoStack=[];flowWireDrag=null;flowConnect=null;flowConnectBranch=null;flowDebugRunId=null;
+ flowInspection=null;flowInspectionSignature=null;flowInspectionIndex=0;flowInspectionCheckpoints=new Set();
 }
 function flowCommit(before){
  if(!before||!flowDraft||JSON.stringify(before)===JSON.stringify(flowSnapshot()))return false;

@@ -210,6 +210,73 @@ class StudioManager:
             data = self._read()
             return copy.deepcopy(data)
 
+
+    def inspect(self, payload, checkpoints=None):
+        """Validate an unsaved graph and return a READ-ONLY execution walkthrough.
+
+        No work orders, capture jobs, scale measurements, connections, state
+        writes, or historical run records are created. Checkpoints are only
+        inspection markers, not runtime breakpoints.
+        """
+        graph = validate_workflow(payload, self.hub.list_devices())
+        if checkpoints is None:
+            checkpoints = []
+        if not isinstance(checkpoints, list) or len(checkpoints) > MAX_NODES:
+            raise ValueError("Checkpoints must be a bounded list of node IDs")
+        if any(not isinstance(nid, str) or not ID_RE.fullmatch(nid) for nid in checkpoints):
+            raise ValueError("Invalid checkpoint ID")
+        node_map = {n["id"]: n for n in graph["nodes"]}
+        if len(set(checkpoints)) != len(checkpoints) or any(nid not in node_map for nid in checkpoints):
+            raise ValueError("Checkpoints must reference distinct existing nodes")
+        incoming = {nid: [] for nid in node_map}
+        outgoing = {nid: [] for nid in node_map}
+        for edge in graph["edges"]:
+            incoming[edge["target"]].append(edge)
+            outgoing[edge["source"]].append(edge)
+        actions = {
+            "start": ("local trigger", False, False),
+            "barcode": ("barcode fixture", False, False),
+            "scale": ("simulated scale reading (updates local measurement)", True, False),
+            "tcp_scale": ("read already-active localhost TCP scale", True, True),
+            "serial_scale": ("read already-active local POSIX serial scale", True, True),
+            "condition": ("evaluate weight or barcode; branch determined at runtime", False, False),
+            "capture": ("generate a new local JPG capture", True, False),
+            "output": ("inspect accumulated run output", False, False),
+        }
+        plan = []
+        for index, nid in enumerate(graph["order"]):
+            node = node_map[nid]
+            label, side_effect, adapter_required = actions[node["type"]]
+            item = {
+                "step": index + 1,
+                "node_id": nid,
+                "type": node["type"],
+                "action": label,
+                "may_mutate_local_state": side_effect,
+                "requires_active_adapter": adapter_required,
+                "checkpoint": nid in checkpoints,
+                "incoming": copy.deepcopy(incoming[nid]),
+                "outgoing": copy.deepcopy(outgoing[nid]),
+            }
+            if node["type"] == "condition":
+                item["condition"] = copy.deepcopy(node["config"])
+                item["note"] = "TRUE/FALSE selection is unknown until a real execution"
+            if node["type"] in ("scale", "tcp_scale", "serial_scale", "capture"):
+                item["device_id"] = node["config"]["device_id"]
+            plan.append(item)
+        return {
+            "mode": "read_only_preflight",
+            "execution_performed": False,
+            "name": graph["name"],
+            "node_count": len(plan),
+            "edge_count": len(graph["edges"]),
+            "steps": plan,
+            "checkpoints": checkpoints[:],
+            "may_generate_jpgs_on_execution": any(n["type"] == "capture" for n in graph["nodes"]),
+            "may_read_managed_adapters_on_execution": any(n["type"] in ("tcp_scale", "serial_scale") for n in graph["nodes"]),
+            "note": "Read-only walkthrough. Checkpoints are inspection markers, not live execution pauses.",
+        }
+
     def save(self, payload):
         graph = validate_workflow(payload, self.hub.list_devices())
         with self.lock:
