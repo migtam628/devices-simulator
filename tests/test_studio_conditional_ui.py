@@ -24,7 +24,7 @@ const ctx={
  showToast:(message,bad)=>{ctx.toast={message,bad}}
 };
 vm.createContext(ctx);
-for(const file of ["studio.js","studio_editor.js"])
+for(const file of ["studio.js","studio_editor.js","studio_debugger.js"])
  vm.runInContext(fs.readFileSync(process.argv[1]+"/"+file,"utf8"),ctx);
 const e=(s)=>vm.runInContext(s,ctx);
 (async()=>{
