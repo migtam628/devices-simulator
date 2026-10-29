@@ -429,6 +429,17 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                     if path == "/api/connections/serial-probe":
                         return self.send(200, {"probe": connections.probe_serial(device_id)})
                     return self.send(404, {"error": "Unknown connection command"})
+                if path == "/api/studio/debug/status":
+                    return self.send(200, {"session": studio.live_status()})
+                if path == "/api/studio/debug/start":
+                    return self.send(200, {"session": studio.live_start(
+                        payload.get("id"), payload.get("revision"))})
+                if path == "/api/studio/debug/step":
+                    return self.send(200, {"result": studio.live_step(
+                        payload.get("session_id"), payload.get("expected_step"),
+                        payload.get("confirm", False))})
+                if path == "/api/studio/debug/cancel":
+                    return self.send(200, {"run": studio.live_cancel(payload.get("session_id"))})
                 if path == "/api/studio/workflows/inspect":
                     return self.send(200, {"inspection": studio.inspect(
                         payload.get("workflow"), payload.get("checkpoints"))})

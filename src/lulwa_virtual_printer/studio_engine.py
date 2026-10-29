@@ -9,6 +9,7 @@ import copy
 import json
 import re
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ MAX_EDGES = 48
 EXPORT_FORMAT = "devices-simulator-studio"
 EXPORT_VERSION = 1
 MAX_IMPORT_BYTES = 64 * 1024
+LIVE_TIMEOUT_SECONDS = 15 * 60
+LIVE_EFFECT_TYPES = frozenset(("scale", "tcp_scale", "serial_scale", "capture"))
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
 LABEL_RE = re.compile(r"^[^\x00-\x1f]{1,80}$")
 DEVICE_KINDS = {"scale": {"scale"}, "capture": {"office_printer", "label_printer", "scanner"}}
@@ -191,6 +194,7 @@ class StudioManager:
         self.path = Path(state_dir) / "studio_workflows.json"
         self.hub = hub_store
         self.lock = threading.RLock()
+        self._live = None  # one volatile debug session per Hub; never persisted
         if not self.path.exists():
             self._write({"version": 1, "workflows": [], "runs": []})
 
@@ -361,6 +365,240 @@ class StudioManager:
             self._write(data)
             return True
 
+    def _iter_execution(self, graph):
+        """Yield exactly one executed, skipped, or inactive node per next().
+        
+        Shared by normal runs and manually gated debugging sessions. A suspended
+        generator cannot progress unless its caller explicitly advances it.
+        """
+        trace = []
+        nodes = {n["id"]: n for n in graph["nodes"]}
+        incoming = {nid: [] for nid in nodes}
+        for edge in graph["edges"]:
+            incoming[edge["target"]].append(edge)
+        results = {}
+        for nid in graph["order"]:
+            node = nodes[nid]
+            prev = []
+            blocked = False
+            for edge in incoming[nid]:
+                parent = results[edge["source"]]
+                if parent["status"] in ("failed", "skipped"):
+                    blocked = True
+                elif parent["status"] == "completed":
+                    branch = edge.get("branch")
+                    if branch is None or parent.get("decision") == (branch == "true"):
+                        prev.append(parent)
+            if blocked:
+                results[nid] = {"status": "skipped"}
+                trace.append({"node_id": nid, "type": node["type"], "status": "skipped",
+                              "detail": "Upstream step did not complete"})
+                yield copy.deepcopy(trace[-1])
+                continue
+            if incoming[nid] and not prev:
+                results[nid] = {"status": "inactive"}
+                trace.append({"node_id": nid, "type": node["type"], "status": "inactive",
+                              "detail": "Condition branch was not selected"})
+                yield copy.deepcopy(trace[-1])
+                continue
+            payload = {"barcode": None, "weight": None, "captures": []}
+            for item in prev:
+                previous = item.get("data", {})
+                if previous.get("barcode") is not None:
+                    payload["barcode"] = previous["barcode"]
+                if previous.get("weight") is not None:
+                    payload["weight"] = previous["weight"]
+                payload["captures"].extend(previous.get("captures", []))
+            kind, cfg = node["type"], node["config"]
+            try:
+                detail = ""
+                if kind == "start":
+                    detail = "Local sample event started"
+                elif kind == "barcode":
+                    payload["barcode"] = cfg["value"]
+                    detail = "Barcode fixture supplied test data (no keyboard event)"
+                elif kind == "scale":
+                    reading = self.hub.simulate_scale_reading(cfg["device_id"], cfg)
+                    payload["weight"] = {"value": reading["weight"], "unit": reading["unit"],
+                                         "status": reading["status"]}
+                    if reading["status"] != "stable":
+                        raise ValueError("Scale reading is " + reading["status"])
+                    detail = f"Local scale fixture: {reading['weight']} {reading['unit']}"
+                elif kind == "tcp_scale":
+                    if self.connections is None:
+                        raise RuntimeError("Connection Engine not available")
+                    reading = self.connections.read_scale(cfg["device_id"])
+                    payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
+                                         "status": reading["status"]}
+                    detail = f"TCP scale read over localhost:{reading['port']}: {reading['raw_response']}"
+                elif kind == "serial_scale":
+                    if self.connections is None:
+                        raise RuntimeError("Connection Engine not available")
+                    reading = self.connections.read_serial_scale(cfg["device_id"])
+                    payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
+                                         "status": reading["status"]}
+                    detail = f"Serial scale read over local PTY {reading['path']}: {reading['raw_response']}"
+                elif kind == "condition":
+                    if cfg["field"] == "weight":
+                        reading = payload["weight"]
+                        if reading is None or reading.get("status") != "stable":
+                            raise ValueError("Weight condition requires an upstream stable scale reading")
+                        actual = reading["value"]
+                        decision = actual >= cfg["value"] if cfg["operator"] == "gte" else actual < cfg["value"]
+                        detail = f"Weight {actual} {reading['unit']} {cfg['operator']} {cfg['value']} = {decision}"
+                    else:
+                        actual = payload["barcode"]
+                        if actual is None:
+                            raise ValueError("Barcode condition requires an upstream barcode")
+                        decision = (actual == cfg["value"] if cfg["operator"] == "equals"
+                                    else cfg["value"] in actual)
+                        detail = f"Barcode condition {cfg['operator']} {cfg['value']!r} = {decision}"
+                elif kind == "capture":
+                    job = self.hub.test_device(cfg["device_id"], title=cfg["title"])
+                    if job["status"] != "rendered":
+                        raise ValueError(job.get("error", "Document capture failed"))
+                    payload["captures"].append({"job_id": job["id"],
+                                                "images": job.get("images", []),
+                                                "profile": job["profile"]})
+                    detail = f"{len(job.get('images', []))} JPG page(s) captured locally"
+                elif kind == "output":
+                    detail = f"{len(payload['captures'])} capture job(s) in run"
+                results[nid] = {"status": "completed", "data": payload}
+                if kind == "condition":
+                    results[nid]["decision"] = decision
+                completed = {"node_id": nid, "type": kind, "status": "completed",
+                             "detail": detail}
+                if kind == "condition":
+                    completed["decision"] = decision
+                    completed["selected_branch"] = "true" if decision else "false"
+                if kind == "capture":
+                    completed["job_id"] = job["id"]
+                    completed["images"] = job.get("images", [])
+                if kind in ("scale", "tcp_scale", "serial_scale"):
+                    completed["weight"] = payload["weight"]
+                trace.append(completed)
+            except (ValueError, LookupError, RuntimeError, OSError) as exc:
+                results[nid] = {"status": "failed"}
+                trace.append({"node_id": nid, "type": kind, "status": "failed",
+                              "detail": str(exc)[:200]})
+            yield copy.deepcopy(trace[-1])
+        status = "completed" if all(t["status"] in ("completed", "inactive") for t in trace) else "failed"
+        return trace, status
+
+    def _live_current(self):
+        session = self._live
+        if session and time.monotonic() - session["last_used"] > LIVE_TIMEOUT_SECONDS:
+            # Do not silently replay pending captures after TTL expiry.
+            self._live = None
+            return None
+        return session
+
+    def _live_view(self, session):
+        order = session["graph"]["order"]
+        idx = session["index"]
+        node = None
+        if idx < len(order):
+            current = next(n for n in session["graph"]["nodes"] if n["id"] == order[idx])
+            node = {"id": current["id"], "type": current["type"],
+                    "requires_confirmation": current["type"] in LIVE_EFFECT_TYPES}
+        return {"session_id": session["id"], "workflow_id": session["workflow_id"],
+                "workflow_revision": session["revision"], "status": "paused",
+                "expected_step": idx, "total_steps": len(order),
+                "next_node": node, "steps": copy.deepcopy(session["trace"]),
+                "expires_in_seconds": max(0, int(LIVE_TIMEOUT_SECONDS -
+                    (time.monotonic() - session["last_used"]))),
+                "note": "One step per authenticated request; pending steps never execute automatically."}
+
+    def live_status(self):
+        with self.lock:
+            session = self._live_current()
+            return copy.deepcopy(self._live_view(session)) if session else None
+
+    def live_start(self, workflow_id, revision):
+        """Create one volatile paused session from an EXACT saved workflow revision."""
+        if not isinstance(workflow_id, str) or not ID_RE.fullmatch(workflow_id):
+            raise ValueError("Invalid saved workflow identifier")
+        if type(revision) is not int or revision < 1:
+            raise ValueError("Live debugging requires the saved workflow revision")
+        with self.lock:
+            if self._live_current() is not None:
+                raise RuntimeError("A debug session is already active; inspect or cancel it first")
+            saved = next((w for w in self._read()["workflows"] if w["id"] == workflow_id), None)
+            if saved is None:
+                raise LookupError("Saved workflow not found")
+            if saved["revision"] != revision:
+                raise RuntimeError("Workflow revision changed; reload and save before debugging")
+            graph = validate_workflow(saved, self.hub.list_devices())
+            self._live = {"id": uuid.uuid4().hex, "workflow_id": workflow_id,
+                          "revision": saved["revision"], "snapshot": {
+                              "name": saved["name"], "nodes": copy.deepcopy(saved["nodes"]),
+                              "edges": copy.deepcopy(saved["edges"])},
+                          "graph": graph, "cursor": self._iter_execution(graph),
+                          "index": 0, "trace": [], "started_at": now(),
+                          "last_used": time.monotonic()}
+            return self._live_view(self._live)
+
+    def _live_record(self, session, status, steps):
+        record = {
+            "id": uuid.uuid4().hex, "workflow_id": session["workflow_id"],
+            "name": session["snapshot"]["name"], "status": status,
+            "started_at": session["started_at"], "finished_at": now(),
+            "steps": copy.deepcopy(steps), "workflow_snapshot": copy.deepcopy(session["snapshot"]),
+            "workflow_revision": session["revision"], "replayed_from": None,
+            "mode": "confirmed_manual_step_debugger",
+        }
+        data = self._read()
+        data["runs"].insert(0, record)
+        data["runs"] = data["runs"][:80]
+        self._write(data)
+        return record
+
+    def live_step(self, session_id, expected_step, confirm=False):
+        """Advance exactly one node, and never duplicate it when a request is retried."""
+        if not isinstance(session_id, str) or not ID_RE.fullmatch(session_id):
+            raise ValueError("Invalid debug session identifier")
+        if type(expected_step) is not int or expected_step < 0:
+            raise ValueError("An exact nonnegative expected step is required")
+        with self.lock:
+            session = self._live_current()
+            if not session or session["id"] != session_id:
+                raise LookupError("Debug session is missing or expired")
+            if session["index"] != expected_step:
+                raise RuntimeError("Step has already advanced; reload session status")
+            next_id = session["graph"]["order"][session["index"]]
+            node = next(n for n in session["graph"]["nodes"] if n["id"] == next_id)
+            if node["type"] in LIVE_EFFECT_TYPES and confirm is not True:
+                raise ValueError("This step may access a scale or create JPG files; confirm explicitly")
+            # Generator is serialized under the same lock as normal runs.
+            item = next(session["cursor"])
+            session["trace"].append(item)
+            session["index"] += 1
+            session["last_used"] = time.monotonic()
+            if session["index"] == len(session["graph"]["order"]):
+                try:
+                    next(session["cursor"])
+                except StopIteration as done:
+                    full_trace, status = done.value
+                else:
+                    raise RuntimeError("Unexpected extra execution step")
+                record = self._live_record(session, status, full_trace)
+                self._live = None
+                return {"status": status, "finished": True, "run": record,
+                        "executed": item, "session": None}
+            return {"status": "paused", "finished": False, "executed": item,
+                    "session": self._live_view(session)}
+
+    def live_cancel(self, session_id):
+        if not isinstance(session_id, str) or not ID_RE.fullmatch(session_id):
+            raise ValueError("Invalid debug session identifier")
+        with self.lock:
+            session = self._live_current()
+            if not session or session["id"] != session_id:
+                raise LookupError("Debug session is missing or expired")
+            record = self._live_record(session, "cancelled", session["trace"])
+            self._live = None
+            return record
+
     def run(self, workflow_id, replay_run_id=None):
         """Execute current or historically snapshotted graph using FRESH fixtures."""
         with self.lock:
@@ -385,114 +623,13 @@ class StudioManager:
             trace = []
             try:
                 graph = validate_workflow(execution, self.hub.list_devices())
-                nodes = {n["id"]: n for n in graph["nodes"]}
-                incoming = {nid: [] for nid in nodes}
-                for edge in graph["edges"]:
-                    incoming[edge["target"]].append(edge)
-                results = {}
-                for nid in graph["order"]:
-                    node = nodes[nid]
-                    prev = []
-                    blocked = False
-                    for edge in incoming[nid]:
-                        parent = results[edge["source"]]
-                        if parent["status"] in ("failed", "skipped"):
-                            blocked = True
-                        elif parent["status"] == "completed":
-                            branch = edge.get("branch")
-                            if branch is None or parent.get("decision") == (branch == "true"):
-                                prev.append(parent)
-                    if blocked:
-                        results[nid] = {"status": "skipped"}
-                        trace.append({"node_id": nid, "type": node["type"], "status": "skipped",
-                                      "detail": "Upstream step did not complete"})
-                        continue
-                    if incoming[nid] and not prev:
-                        results[nid] = {"status": "inactive"}
-                        trace.append({"node_id": nid, "type": node["type"], "status": "inactive",
-                                      "detail": "Condition branch was not selected"})
-                        continue
-                    payload = {"barcode": None, "weight": None, "captures": []}
-                    for item in prev:
-                        previous = item.get("data", {})
-                        if previous.get("barcode") is not None:
-                            payload["barcode"] = previous["barcode"]
-                        if previous.get("weight") is not None:
-                            payload["weight"] = previous["weight"]
-                        payload["captures"].extend(previous.get("captures", []))
-                    kind, cfg = node["type"], node["config"]
+                cursor = self._iter_execution(graph)
+                while True:
                     try:
-                        detail = ""
-                        if kind == "start":
-                            detail = "Local sample event started"
-                        elif kind == "barcode":
-                            payload["barcode"] = cfg["value"]
-                            detail = "Barcode fixture supplied test data (no keyboard event)"
-                        elif kind == "scale":
-                            reading = self.hub.simulate_scale_reading(cfg["device_id"], cfg)
-                            payload["weight"] = {"value": reading["weight"], "unit": reading["unit"],
-                                                 "status": reading["status"]}
-                            if reading["status"] != "stable":
-                                raise ValueError("Scale reading is " + reading["status"])
-                            detail = f"Local scale fixture: {reading['weight']} {reading['unit']}"
-                        elif kind == "tcp_scale":
-                            if self.connections is None:
-                                raise RuntimeError("Connection Engine not available")
-                            reading = self.connections.read_scale(cfg["device_id"])
-                            payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
-                                                 "status": reading["status"]}
-                            detail = f"TCP scale read over localhost:{reading['port']}: {reading['raw_response']}"
-                        elif kind == "serial_scale":
-                            if self.connections is None:
-                                raise RuntimeError("Connection Engine not available")
-                            reading = self.connections.read_serial_scale(cfg["device_id"])
-                            payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
-                                                 "status": reading["status"]}
-                            detail = f"Serial scale read over local PTY {reading['path']}: {reading['raw_response']}"
-                        elif kind == "condition":
-                            if cfg["field"] == "weight":
-                                reading = payload["weight"]
-                                if reading is None or reading.get("status") != "stable":
-                                    raise ValueError("Weight condition requires an upstream stable scale reading")
-                                actual = reading["value"]
-                                decision = actual >= cfg["value"] if cfg["operator"] == "gte" else actual < cfg["value"]
-                                detail = f"Weight {actual} {reading['unit']} {cfg['operator']} {cfg['value']} = {decision}"
-                            else:
-                                actual = payload["barcode"]
-                                if actual is None:
-                                    raise ValueError("Barcode condition requires an upstream barcode")
-                                decision = (actual == cfg["value"] if cfg["operator"] == "equals"
-                                            else cfg["value"] in actual)
-                                detail = f"Barcode condition {cfg['operator']} {cfg['value']!r} = {decision}"
-                        elif kind == "capture":
-                            job = self.hub.test_device(cfg["device_id"], title=cfg["title"])
-                            if job["status"] != "rendered":
-                                raise ValueError(job.get("error", "Document capture failed"))
-                            payload["captures"].append({"job_id": job["id"],
-                                                        "images": job.get("images", []),
-                                                        "profile": job["profile"]})
-                            detail = f"{len(job.get('images', []))} JPG page(s) captured locally"
-                        elif kind == "output":
-                            detail = f"{len(payload['captures'])} capture job(s) in run"
-                        results[nid] = {"status": "completed", "data": payload}
-                        if kind == "condition":
-                            results[nid]["decision"] = decision
-                        completed = {"node_id": nid, "type": kind, "status": "completed",
-                                     "detail": detail}
-                        if kind == "condition":
-                            completed["decision"] = decision
-                            completed["selected_branch"] = "true" if decision else "false"
-                        if kind == "capture":
-                            completed["job_id"] = job["id"]
-                            completed["images"] = job.get("images", [])
-                        if kind in ("scale", "tcp_scale", "serial_scale"):
-                            completed["weight"] = payload["weight"]
-                        trace.append(completed)
-                    except (ValueError, LookupError, RuntimeError, OSError) as exc:
-                        results[nid] = {"status": "failed"}
-                        trace.append({"node_id": nid, "type": kind, "status": "failed",
-                                      "detail": str(exc)[:200]})
-                status = "completed" if all(t["status"] in ("completed", "inactive") for t in trace) else "failed"
+                        next(cursor)
+                    except StopIteration as done:
+                        trace, status = done.value
+                        break
             except ValueError as exc:
                 status = "failed"
                 trace = [{"node_id": "validation", "type": "validation", "status": "failed",

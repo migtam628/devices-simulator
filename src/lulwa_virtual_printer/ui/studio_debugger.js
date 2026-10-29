@@ -80,3 +80,71 @@ async function flowInspectionAction(action){
  flowSelected=steps[flowInspectionIndex].node_id;
  draw();
 }
+
+/* v0.13.9 Live step runner: network actions only on user clicks.
+ * Every single step is gated on the server and cannot be retried twice.
+ */
+let flowLiveSession=null;
+function flowLivePanel(){
+ const session=flowLiveSession;
+ if(!session)return '<p class="small">A live step session uses an immutable SAVED workflow revision. Only your explicit Next step action runs one node. Scale reads and JPG captures require a separate confirmation.</p>'+
+ '<div class="row wrap">'+button("Start paused session","flow-live-start","primary")+
+ button("Recover active session","flow-live-status")+'</div>';
+ if(session.workflow_id!==flowDraft?.id)return '<div class="notice">A live session exists for a different saved workflow. Open that workflow or cancel the session.</div>'+
+ '<div class="row wrap">'+button("Recover session","flow-live-status")+button("Cancel session","flow-live-cancel","danger")+'</div>';
+ const next=session.next_node;
+ return '<div class="notice"><b>PAUSED — no background execution</b><p class="small">Saved workflow revision '+session.workflow_revision+
+ ' · '+session.expected_step+' / '+session.total_steps+' steps completed. Session expires after 15 minutes of inactivity. Refresh requires Recover active session.</p></div>'+
+ (next?'<p class="small"><b>Next:</b> '+clean(next.type)+' ('+clean(next.id)+')'+
+ (next.requires_confirmation?' — confirmation required before local fixture/device effects':' — safe local graph operation')+'</p>':'')+
+ '<div class="row wrap">'+button("Execute next step","flow-live-step","primary",!next)+
+ button("Recover status","flow-live-status")+button("Cancel session","flow-live-cancel","danger")+'</div>'+
+ '<div class="flow-inspection-list">'+session.steps.map((s,i)=>
+ '<div class="flow-inspection-step"><b>'+(i+1)+'. '+clean(s.type)+'</b> <small>'+clean(s.status)+': '+clean(s.detail||"")+'</small>'+
+ (s.selected_branch?'<small>Selected '+clean(s.selected_branch.toUpperCase())+'</small>':'')+
+ (s.job_id&&s.images?.length?'<a href="/api/artifacts/'+encodeURIComponent(s.job_id)+'/'+encodeURIComponent(s.images[0])+
+ '" target="_blank" rel="noopener noreferrer">View JPG</a>':'')+
+ '</div>').join("")+'</div>';
+}
+async function flowLiveAction(action){
+ if(action==="flow-live-status"){
+  const response=await post("/api/studio/debug/status",{});
+  flowLiveSession=response.session;draw();return;
+ }
+ if(action==="flow-live-start"){
+  if(!flowDraft)return;
+  flowSync();
+  if(!confirm("Start a paused manual execution using a saved workflow? No nodes will run until you select Execute next step. Subsequent steps can create JPGs or contact active local scale endpoints."))return;
+  const saved=await flowSaveDraft();
+  const response=await post("/api/studio/debug/start",{id:saved.id,revision:saved.revision});
+  flowLiveSession=response.session;draw();showToast("Paused session created; no steps executed");
+  return;
+ }
+ if(!flowLiveSession)return showToast("Recover the active session first",true);
+ if(action==="flow-live-cancel"){
+  if(!confirm("Cancel this paused session? Already executed steps and any JPG captures cannot be undone. Partial results will remain in run history."))return;
+  const response=await post("/api/studio/debug/cancel",{session_id:flowLiveSession.session_id});
+  flowLiveSession=null;await refresh();showToast("Debug session cancelled; partial run recorded");return;
+ }
+ if(action==="flow-live-step"){
+  const current=flowLiveSession.next_node;
+  if(!current)return;
+  const needs=current.requires_confirmation;
+  const approved=needs?confirm("Execute this "+current.type+" step now? It may update a local scale fixture, read an active local TCP/PTY scale adapter, or create NEW JPG files. This action cannot be undone."):false;
+  if(needs&&!approved)return;
+  const response=await post("/api/studio/debug/step",{
+   session_id:flowLiveSession.session_id,
+   expected_step:flowLiveSession.expected_step,
+   confirm:needs?true:false
+  });
+  flowLiveSession=response.result.session;
+  if(response.result.finished){
+   await refresh();
+   showToast(response.result.status==="completed"?"Step execution completed":"Step execution finished with failures",
+     response.result.status!=="completed");
+  }else{
+   draw();
+   if(response.result.executed.status==="failed")showToast("Step failed — downstream dependents may be skipped",true);
+  }
+ }
+}

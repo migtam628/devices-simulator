@@ -1,6 +1,6 @@
 # Advanced Studio — architecture and phased delivery
 
-**Status:** v0.13.8 adds a read-only preflight debugger and step inspection with explicit execution boundaries.
+**Status:** v0.13.9 adds explicitly confirmed live one-node-at-a-time execution sessions, building on the read-only inspector.
 
 ## Repository review
 
@@ -131,3 +131,24 @@ The Studio panel provides a **walkthrough cursor** with Previous/Next step, dire
 **Tests:** `python3 -m pytest -q tests/test_studio_preflight.py` covers side-effect-free inspection, branch and device flags, input/checkpoint validation, authenticated HTTP access and the actual three-script browser logic using Node.js.
 
 **Still planned:** controlled live pause/resume with safe device side-effect boundaries, debugger breakpoints at runtime, low-level OS printing verification, drivers, packaging and signed native installers. This milestone makes no claim of deterministic future branch outcomes or actual hardware compatibility.
+
+## v0.13.9 — Confirmed live execution stepper
+
+The normal Run locally execution path and manual stepper use the **same serialized per-node generator**. The stepper never schedules background work or advances a second node until another explicit user action. Starting a session requires a **saved workflow ID and exact revision** and returns the next node without executing it. Exactly one in-memory session is permitted per running Hub. A paused session expires after 15 minutes of inactivity and is not restored after process restart. The app provides Recover active session (authenticated) for web-page refreshes.
+
+**Step security:** Each step request must include the random session ID and the precise `expected_step` index, preventing accidental double execution by a retry or double-click. Start and status are read-only. For `scale`, `tcp_scale`, `serial_scale`, and `capture` nodes, the server rejects the step unless `confirm: true` is present. The browser separately asks confirmation immediately before sending each such request. A node is advanced only once; the next step cannot run unless the client explicitly requests it. Condition TRUE/FALSE branches and upstream errors keep their existing inactive/skipped behavior.
+
+**Completion and cancellation:** Finishing the final node produces one normal audit run with mode `confirmed_manual_step_debugger`, immutable graph snapshot, revision and per-node outcomes. Cancel records the partial trace with `cancelled` status; no remaining nodes run. Neither cancel, error handling, nor expiry rolls back previously generated JPGs or reads. Session expiry drops pending execution without writing a fresh audit run; previously created jobs remain in the Hub's Jobs/Output Gallery.
+
+| Authenticated POST route | Purpose |
+|---|---|
+| `/api/studio/debug/start` | `{id, revision}` starts a paused session without executing |
+| `/api/studio/debug/status` | Returns current in-memory session or null |
+| `/api/studio/debug/step` | `{session_id, expected_step, confirm}` executes exactly one node |
+| `/api/studio/debug/cancel` | `{session_id}` cancels and audits already-executed steps |
+
+Session IDs and step positions are not persisted in workflow exports. All routes require the existing local Hub X-Devices-Token and inherit the loopback-only network restriction. No remote host input, arbitrary scripts, native USB/BLE, or physical OS printer requests are added.
+
+**Tests:** `python3 -m pytest -q tests/test_studio_live.py tests/test_studio_live_ui.py` plus the full suite. Confirm in a real desktop GUI that pressing Cancel never creates another JPG, and that a blocked scale adapter step reports failure without contacting arbitrary hosts. Packaged-binary smoke tests do not certify third-party device emulation.
+
+**Further work:** OS print-to-JPG roundtrip field verification is a high-priority outstanding issue. Also outstanding: Windows virtual COM, native USB/BLE drivers, signed installers and broader compatibility tests.
