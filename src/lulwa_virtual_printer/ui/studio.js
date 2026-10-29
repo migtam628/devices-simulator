@@ -39,14 +39,15 @@ function flowTemplate(){
 }
 function flowOpen(id){
  flowDraft=structuredClone(flowList().find(x=>x.id===id)||flowTemplate());
- flowSelected=flowDraft.nodes[0]?.id||null;flowConnect=null;draw();
+ flowSelected=flowDraft.nodes[0]?.id||null;flowResetHistory();draw();
 }
 function flowSync(){
  if(!flowDraft)return;
+ const before=flowSnapshot();
  const name=E("flow-title");
  if(name)flowDraft.name=name.value;
  const node=flowDraft.nodes.find(x=>x.id===flowSelected);
- if(!node)return;
+ if(!node){flowCommit(before);return;}
  const cfg=node.config;
  const read=(id)=>E(id)?.value;
  if(node.type==="barcode"&&E("flow-barcode"))cfg.value=read("flow-barcode");
@@ -62,27 +63,29 @@ function flowSync(){
    if(E("flow-unit"))cfg.unit=read("flow-unit");
    if(E("flow-stable"))cfg.stable=read("flow-stable")==="true";
  }
+ flowCommit(before);
 }
 function flowCard(n){
  const t=flowTypes[n.type];
  const d=state.devices.find(x=>x.id===n.config?.device_id);
  const subtitle=d?d.name:n.type==="barcode"?(n.config.value||"Test data"):
      (n.type==="scale"||n.type==="tcp_scale"||n.type==="serial_scale")?"Choose a saved scale":n.type==="capture"?"Choose a saved printer":"Local in-app step";
- return '<div class="flow-node '+t.color+(flowSelected===n.id?" selected":"")+'" data-flow-node="'+clean(n.id)+'" style="left:'+n.x+'px;top:'+n.y+'px">'+
+ const step=flowStatusForNode(n.id),status=step?.status||"";
+ return '<div class="flow-node '+t.color+(flowSelected===n.id?" selected":"")+(status?" flow-result-"+clean(status):"")+'" data-flow-node="'+clean(n.id)+'" style="left:'+n.x+'px;top:'+n.y+'px">'+
  '<div class="flow-grab" role="button" tabindex="0" aria-label="Select '+clean(t.label)+' node" data-flow-drag="'+clean(n.id)+'" data-action="flow-select:'+clean(n.id)+'"><span class="flow-node-icon">'+t.icon+'</span><span><b>'+t.label+'</b><small>'+clean(t.caption)+'</small></span><span class="flow-drag-handle" aria-hidden="true">⠿</span></div>'+
- '<div class="flow-node-foot">'+clean(subtitle)+'</div><span class="flow-port in" aria-hidden="true"></span><span class="flow-port out" aria-hidden="true"></span></div>';
+ '<div class="flow-node-foot">'+clean(subtitle)+(status?" · "+clean(status):"")+'</div>'+
+ (n.type!=="start"?'<button type="button" class="flow-port in" data-flow-port="in" data-flow-port-node="'+clean(n.id)+'" data-action="flow-port-in:'+clean(n.id)+'" aria-label="Connect into '+clean(t.label)+'" title="Input port · drop or click here"></button>':"")+
+ (n.type!=="output"?'<button type="button" class="flow-port out" data-flow-port="out" data-flow-port-node="'+clean(n.id)+'" data-action="flow-port-out:'+clean(n.id)+'" aria-label="Connect from '+clean(t.label)+'" title="Output port · drag or click to connect"></button>':"")+'</div>';
 }
 function flowWires(){
  if(!flowDraft)return "";
  const coords=new Map(flowDraft.nodes.map(n=>[n.id,n]));
  return '<svg class="flow-wires" viewBox="0 0 1260 620" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="flow-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6" fill="none" stroke="#668ab9" stroke-width="1.4"/></marker></defs>'+
- flowDraft.edges.map(e=>{
+ flowDraft.edges.map((e,i)=>{
    const a=coords.get(e.source),b=coords.get(e.target);
    if(!a||!b)return "";
-   const x=a.x+188,y=a.y+45,tx=b.x,ty=b.y+45;
-   const bend=Math.max(45,Math.abs(tx-x)*.48);
-   return '<path data-wire="'+clean(e.source)+'-'+clean(e.target)+'" d="M'+x+' '+y+' C'+(x+bend)+' '+y+' '+(tx-bend)+' '+ty+' '+tx+' '+ty+'" fill="none" stroke="#658cba" stroke-width="2.3" marker-end="url(#flow-arrow)"/>';
- }).join("")+'</svg>';
+   return '<path id="flow-wire-'+i+'" data-wire="'+clean(e.source)+'-'+clean(e.target)+'" d="'+flowWireD(a,b)+'" fill="none" stroke="#658cba" stroke-width="2.3" marker-end="url(#flow-arrow)"/>';
+ }).join("")+'<path id="flow-wire-preview" d="" fill="none" stroke="#0f9b8c" stroke-width="2.5" stroke-dasharray="6 4" aria-hidden="true"/></svg>';
 }
 function flowNodeInspector(){
  const n=flowDraft?.nodes.find(x=>x.id===flowSelected);
@@ -98,9 +101,13 @@ function flowNodeInspector(){
   if(n.type==="scale") fields+='<div class="grid two"><label class="field"><span>Gross kg</span><input type="number" min="0" step="0.001" id="flow-gross" value="'+clean(c.gross_kg??1.25)+'"></label><label class="field"><span>Tare kg</span><input type="number" min="0" step="0.001" id="flow-tare" value="'+clean(c.tare_kg??0)+'"></label><label class="field"><span>Unit</span><select id="flow-unit">'+["kg","lb","g","oz"].map(u=>'<option '+(c.unit===u?"selected":"")+'>'+u+'</option>').join("")+'</select></label><label class="field"><span>Stability</span><select id="flow-stable"><option value="true" '+(c.stable!==false?"selected":"")+'>Stable</option><option value="false" '+(c.stable===false?"selected":"")+'>Unstable</option></select></label></div><p class="small">Tare-adjusted reading; no physical USB/BLE/network request.</p>';
  }
  const edges=flowDraft.edges.filter(e=>e.source===n.id||e.target===n.id);
+ const destination=n.type==="output"?"":'<label class="field"><span>Connect to node (keyboard alternative)</span><select id="flow-link-target">'+
+  '<option value="">Select destination…</option>'+flowDraft.nodes.filter(t=>t.id!==n.id&&t.type!=="start").map(t=>
+  '<option value="'+clean(t.id)+'">'+clean(flowTypes[t.type].label)+' · '+clean(t.id)+'</option>').join("")+
+  '</select></label>'+button("Add connection","flow-link-selected");
  return '<div class="flow-inspector-title"><span class="flow-node-icon">'+t.icon+'</span><div><strong>'+t.label+'</strong><small>'+clean(n.id)+'</small></div></div>'+fields+
  '<div class="flow-inspector-actions">'+button(flowConnect===n.id?"Choose destination…":"Connect from here","flow-link:"+n.id,"primary")+
- button("Delete node","flow-remove:"+n.id,"danger",n.type==="start"||n.type==="output")+'</div>'+
+ button("Delete node","flow-remove:"+n.id,"danger",n.type==="start"||n.type==="output")+'</div>'+destination+
  (edges.length?'<h3 class="flow-subtitle">Connections</h3>'+edges.map((e,i)=>'<div class="flow-connection"><span>'+clean(e.source===n.id?"→ "+e.target:e.source+" →")+'</span>'+button("Remove","flow-unlink:"+flowDraft.edges.indexOf(e),"")+'</div>').join(""):'<p class="small">No connections yet.</p>');
 }
 function flowImportBindings(){
@@ -139,7 +146,7 @@ function flowHistory(){
  const records=flowRuns().filter(r=>r.workflow_id===flowDraft.id).slice(0,8);
  if(!records.length)return '<p class="small">No runs yet. Save and use <b>Run locally</b>.</p>';
  return records.map(r=>'<details class="flow-run"><summary><span class="flow-status '+r.status+'">'+clean(r.status)+'</span> '+clean(r.started_at.slice(0,19))+' <small>'+r.steps.length+' steps</small></summary>'+
- (r.workflow_snapshot?'<div class="row wrap">'+button("Replay snapshot","flow-replay:"+r.id)+'</div>':'<p class="small">Legacy run has no snapshot for replay.</p>')+
+ (r.workflow_snapshot?'<div class="row wrap">'+button("Inspect run","flow-debug:"+r.id)+button("Replay snapshot","flow-replay:"+r.id)+'</div>':'<p class="small">Legacy run has no snapshot for replay.</p>')+
  r.steps.map(st=>'<div class="flow-run-step"><span class="flow-status '+clean(st.status)+'">'+clean(st.status)+'</span><b>'+clean(st.type)+'</b><small>'+clean(st.detail)+'</small>'+
  (st.job_id&&st.images?.length?'<a class="flow-artifact" href="/api/artifacts/'+encodeURIComponent(st.job_id)+'/'+encodeURIComponent(st.images[0])+'" target="_blank" rel="noopener noreferrer">View JPG ↗</a>':"")+'</div>').join("")+'</details>').join("");
 }
@@ -159,7 +166,7 @@ function studioPage(){
  '<div class="flow-layout">'+library+'<div class="flow-welcome"><div class="flow-welcome-symbol">◇</div><h2>Design a repeatable device workflow</h2><p>Connect sample barcode input, a simulated scale, one or more printer captures, and an output check. Every run produces auditable local results.</p>'+
  button("Create from template","flow-template","primary")+button("External TCP Scale","flow-network-template")+button("External Serial Scale","flow-serial-template")+' '+button("Blank workflow","flow-new")+'</div></div>';
  const chosen=flowDraft.nodes.find(n=>n.id===flowSelected);
- const buttons='<div class="row wrap">'+button("Save","flow-save","primary")+button("Run locally","flow-run","",false)+button("Duplicate","flow-duplicate")+button("Export JSON","flow-export","",!flowDraft.id)+button("Delete","flow-delete","danger",!flowDraft.id)+'</div>';
+ const buttons='<div class="row wrap">'+button("Undo","flow-undo","",!flowUndoStack.length)+button("Redo","flow-redo","",!flowRedoStack.length)+button("Save","flow-save","primary")+button("Run locally","flow-run","",false)+button("Duplicate","flow-duplicate")+button("Export JSON","flow-export","",!flowDraft.id)+button("Delete","flow-delete","danger",!flowDraft.id)+'</div>';
  return heading("ADVANCED DEVICE STUDIO","Visual workflow builder","Editable DAG · local fixtures and opt-in TCP/serial scale adapters",badge("Local-only engine","green"))+
  '<div class="flow-layout">'+library+
  '<section class="flow-workspace"><div class="flow-toolbar"><label class="field"><span>Workflow name</span><input id="flow-title" maxlength="80" value="'+clean(flowDraft.name)+'"></label>'+
@@ -168,9 +175,9 @@ function studioPage(){
  button(v.icon+" "+v.label,"flow-add:"+k,"",k==="start"&&flowDraft.nodes.some(n=>n.type==="start"))).join("")+'</div>'+
  (flowConnect?'<div class="notice">Connecting from <b>'+clean(flowConnect)+'</b>. Click another node as the destination. '+button("Cancel","flow-link-cancel")+'</div>':"")+
  '<div class="flow-canvas-viewport"><div class="flow-canvas" id="flow-canvas">'+flowWires()+flowDraft.nodes.map(flowCard).join("")+'</div></div>'+
- '<div class="flow-editor-footer">Drag a node by its header · Select a node to configure · Link nodes with Connect from here · Save before running.</div>'+
+ '<div class="flow-editor-footer">Drag an output port to an input port, or use the inspector destination selector. Undo/redo supports 40 edits. Save before running.</div>'+
  '<div class="flow-history"><h2>Run history</h2>'+flowHistory()+'</div></section>'+
- '<aside class="flow-inspector card"><h2>Node inspector</h2>'+flowNodeInspector()+
+ '<aside class="flow-inspector card"><h2>Node inspector</h2>'+flowNodeInspector()+flowDebugPanel()+
  '<div class="flow-safety"><b>Simulation boundary</b><p>Runs use local fixtures and existing localhost TCP/PTY scale endpoints. No drivers, physical USB/BLE, Windows COM, remote IPs or OS print jobs.</p></div></aside></div>';
 }
 async function flowSaveDraft(){
@@ -183,6 +190,22 @@ async function flowSaveDraft(){
 }
 async function studioAction(k){
  try{
+  if(k==="flow-undo"){flowUndoEdit();return}
+  if(k==="flow-redo"){flowUndoEdit(true);return}
+  if(k==="flow-debug-clear"){flowDebugRunId=null;draw();return}
+  if(k.startsWith("flow-debug:")){flowSync();flowDebugRunId=k.slice(11);draw();return}
+  if(k==="flow-link-selected"){
+   flowSync();
+   const target=E("flow-link-target")?.value;
+   if(!target)return showToast("Choose a destination first",true);
+   flowLinkNodes(flowSelected,target);return;
+  }
+  if(k.startsWith("flow-port-out:")){
+   flowSync();flowConnect=k.slice(14);flowSelected=flowConnect;draw();return;
+  }
+  if(k.startsWith("flow-port-in:")){
+   flowSync();if(flowConnect)flowLinkNodes(flowConnect,k.slice(13));return;
+  }
   if(k==="flow-import"){E("flow-import-file")?.click();return}
   if(k==="flow-import-cancel"){flowImportDoc=null;draw();return}
   if(k==="flow-import-apply"){
@@ -206,7 +229,7 @@ async function studioAction(k){
    flowDraft={name:"External TCP Scale QA",nodes,
      edges:[{source:nodes[0].id,target:nodes[1].id},
             {source:nodes[1].id,target:nodes[2].id}]};
-   flowSelected=nodes[1].id;flowConnect=null;draw();return;
+   flowSelected=nodes[1].id;flowResetHistory();draw();return;
   }
   if(k==="flow-serial-template"){
    const d=state.devices.find(x=>x.category==="scale"&&x.transport==="serial");
@@ -217,13 +240,13 @@ async function studioAction(k){
    flowDraft={name:"External Serial Scale QA",nodes,
      edges:[{source:nodes[0].id,target:nodes[1].id},
             {source:nodes[1].id,target:nodes[2].id}]};
-   flowSelected=nodes[1].id;flowConnect=null;draw();return;
+   flowSelected=nodes[1].id;flowResetHistory();draw();return;
   }
   if(k==="flow-new"||k==="flow-template"){
    flowDraft=k==="flow-template"?flowTemplate():{name:"Untitled Workflow",nodes:[
     {id:flowId(),type:"start",x:70,y:220,config:{}},
     {id:flowId(),type:"output",x:440,y:220,config:{}}],edges:[]};
-   flowSelected=flowDraft.nodes[0].id;flowConnect=null;draw();return;
+   flowSelected=flowDraft.nodes[0].id;flowResetHistory();draw();return;
   }
   if(k.startsWith("flow-open:")){flowOpen(k.slice(10));return}
   if(!flowDraft)return;
@@ -255,11 +278,11 @@ async function studioAction(k){
   if(k==="flow-delete"){
    if(!flowDraft.id||!confirm("Delete this saved workflow? Captured JPGs will remain."))return;
    await post("/api/studio/workflows/delete",{id:flowDraft.id});
-   flowDraft=null;flowSelected=null;await refresh();showToast("Workflow deleted");return;
+   flowDraft=null;flowSelected=null;flowResetHistory();await refresh();showToast("Workflow deleted");return;
   }
   if(k==="flow-duplicate"){
    flowDraft=structuredClone(flowDraft);delete flowDraft.id;delete flowDraft.revision;delete flowDraft.created_at;delete flowDraft.updated_at;
-   flowDraft.name=flowDraft.name+" (Copy)";draw();return;
+   flowDraft.name=flowDraft.name+" (Copy)";flowResetHistory();draw();return;
   }
   if(k.startsWith("flow-add:")){
    const kind=k.slice(9);
@@ -273,25 +296,23 @@ async function studioAction(k){
    if(kind==="scale"){const d=state.devices.find(d=>d.category==="scale");if(!d)return showToast("Create a scale fixture first",true);Object.assign(cfg,{device_id:d.id,gross_kg:1.25,tare_kg:0,unit:"kg",stable:true})}
    if(kind==="capture"){const d=state.devices.find(d=>["brother","zebra","scanner"].includes(d.preset));if(!d)return showToast("Create a printer or scanner fixture first",true);Object.assign(cfg,{device_id:d.id,title:"Studio Capture"})}
    const n={id:flowId(),type:kind,x:70+(flowDraft.nodes.length%5)*220,y:75+Math.floor(flowDraft.nodes.length/5)*145,config:cfg};
-   flowDraft.nodes.push(n);flowSelected=n.id;draw();return;
+   flowMutation(()=>flowDraft.nodes.push(n));flowSelected=n.id;draw();return;
   }
   if(k.startsWith("flow-select:")){
    const nid=k.slice(12);if(!flowDraft.nodes.some(n=>n.id===nid))return;
-   if(flowConnect&&flowConnect!==nid){
-    if(!flowDraft.edges.some(e=>e.source===flowConnect&&e.target===nid))
-      flowDraft.edges.push({source:flowConnect,target:nid});
-    flowConnect=null;
-   }
+   if(flowConnect&&flowConnect!==nid)flowLinkNodes(flowConnect,nid);
    flowSelected=nid;draw();return;
   }
   if(k==="flow-link-cancel"){flowConnect=null;draw();return}
   if(k.startsWith("flow-link:")){flowConnect=k.slice(10);showToast("Click the destination node");draw();return}
-  if(k.startsWith("flow-unlink:")){flowDraft.edges.splice(Number(k.slice(12)),1);draw();return}
+  if(k.startsWith("flow-unlink:")){const index=Number(k.slice(12));if(Number.isInteger(index)&&index>=0&&index<flowDraft.edges.length)flowMutation(()=>flowDraft.edges.splice(index,1));return}
   if(k.startsWith("flow-remove:")){
    const nid=k.slice(12),n=flowDraft.nodes.find(n=>n.id===nid);
    if(!n||n.type==="start"||n.type==="output")return;
-   flowDraft.nodes=flowDraft.nodes.filter(n=>n.id!==nid);
-   flowDraft.edges=flowDraft.edges.filter(e=>e.source!==nid&&e.target!==nid);
+   flowMutation(()=>{
+    flowDraft.nodes=flowDraft.nodes.filter(n=>n.id!==nid);
+    flowDraft.edges=flowDraft.edges.filter(e=>e.source!==nid&&e.target!==nid);
+   });
    flowSelected=flowDraft.nodes[0]?.id||null;flowConnect=null;draw();return;
   }
  }catch(err){showToast(err.message,true)}
@@ -306,7 +327,7 @@ document.addEventListener("pointerdown",event=>{
  const record=flowDraft.nodes.find(x=>x.id===node.dataset.flowNode);
  if(!record)return;
  flowSync();
- flowDragging={id:record.id,node,pointer:event.pointerId,x:event.clientX,y:event.clientY,startX:record.x,startY:record.y};
+ flowDragging={id:record.id,node,pointer:event.pointerId,x:event.clientX,y:event.clientY,startX:record.x,startY:record.y,before:flowSnapshot()};
  node.setPointerCapture(event.pointerId);
 });
 document.addEventListener("pointermove",event=>{
@@ -314,17 +335,13 @@ document.addEventListener("pointermove",event=>{
  const record=flowDraft.nodes.find(x=>x.id===flowDragging.id);if(!record)return;
  const nx=Math.max(0,Math.min(1060,Math.round(flowDragging.startX+event.clientX-flowDragging.x)));
  const ny=Math.max(0,Math.min(510,Math.round(flowDragging.startY+event.clientY-flowDragging.y)));
- record.x=nx;record.y=ny;flowDragging.node.style.left=nx+"px";flowDragging.node.style.top=ny+"px";
+ record.x=nx;record.y=ny;flowDragging.node.style.left=nx+"px";flowDragging.node.style.top=ny+"px";flowUpdateWires();
 });
 document.addEventListener("pointerup",event=>{
  if(!flowDragging||event.pointerId!==flowDragging.pointer)return;
  const record=flowDragging;flowDragging=null;
- const moved=Math.abs(event.clientX-record.x)+Math.abs(event.clientY-record.y)>7;
- if(!moved&&flowConnect&&flowConnect!==record.id){
-   if(!flowDraft.edges.some(e=>e.source===flowConnect&&e.target===record.id))
-     flowDraft.edges.push({source:flowConnect,target:record.id});
-   flowConnect=null;
- }
+ const moved=flowCommit(record.before);
+ if(!moved&&flowConnect&&flowConnect!==record.id)flowLinkNodes(flowConnect,record.id);
  flowSelected=record.id;draw();
 });
 

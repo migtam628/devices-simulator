@@ -134,6 +134,16 @@ A POSIX PTY is **shared**: stop any `SUB` stream using `UNSUB` before running th
 
 Run History now offers **Replay snapshot** for runs created by v0.13.5 and later. Replay re-executes the **saved original graph** using current local fixtures/active adapters. This is a **new run**, potentially producing new JPG files; it is *not* a deterministic restoration of prior weight readings or rendered output. Replay requires explicit confirmation. Older history records without snapshots cannot be replayed. These actions remain authenticated and local-only. See [Advanced Studio](docs/ADVANCED_STUDIO.md).
 
+## v0.13.6 — visual Advanced Studio editor and run diagnostics
+
+The Advanced Studio canvas now provides **real clickable connection ports**. Drag an output port to another node's input port, or connect using the inspector's keyboard-accessible destination selector. New links are checked immediately for duplicates, self-links, illegal Start/Output directions, graph cycles and the 48-edge limit; final validation still happens on the backend before saving.
+
+**Undo / Redo** tracks up to 40 graph edits (nodes, connections, moved positions, workflow name and inspector changes), while preserving the saved workflow's ID/revision. Keyboard shortcuts: Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z or Ctrl+Y outside text inputs. The canvas updates connection paths as nodes move.
+
+Run History's **Inspect run** button highlights completed, failed and skipped nodes on an *unchanged* graph and shows failure reasons in the inspector. When the current draft differs from the saved historical snapshot, highlighting is disabled to prevent misleading diagnostics. These enhancements affect the UI only: no new OS device drivers, arbitrary network access, printer queue routing or automatic device activation are introduced.
+
+See [Advanced Studio technical guide](docs/ADVANCED_STUDIO.md). Platform builds remain experimental and require interactive testing.
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
