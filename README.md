@@ -128,6 +128,12 @@ Advanced Studio now has an **External Serial Scale** template and a **Serial Sca
 
 A POSIX PTY is **shared**: stop any `SUB` stream using `UNSUB` before running the workflow and avoid simultaneous clients. No Windows COM driver, physical USB/BLE device, arbitrary serial paths or OS print jobs are created by this milestone. Existing TCP and local fixture workflows remain unchanged. See [Advanced Studio](docs/ADVANCED_STUDIO.md).
 
+## v0.13.5 — portable Advanced Studio workflows and snapshot replay
+
+**Export JSON** saves a portable workflow graph without local run history, customer artifacts, output images, or persistence identifiers. **Import JSON** reads a `devices-simulator-studio` v1 document (64 KB maximum), prompts for explicit bindings from the imported device IDs to saved compatible local profiles, validates the graph, and creates a **new workflow** without overwriting existing work. Neither importing nor exporting activates connections or prints.
+
+Run History now offers **Replay snapshot** for runs created by v0.13.5 and later. Replay re-executes the **saved original graph** using current local fixtures/active adapters. This is a **new run**, potentially producing new JPG files; it is *not* a deterministic restoration of prior weight readings or rendered output. Replay requires explicit confirmation. Older history records without snapshots cannot be replayed. These actions remain authenticated and local-only. See [Advanced Studio](docs/ADVANCED_STUDIO.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
