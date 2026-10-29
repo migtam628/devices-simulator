@@ -1,6 +1,6 @@
 # Advanced Studio — architecture and phased delivery
 
-**Status:** v0.13.0 saved workflows, in-app fixtures and opt-in managed localhost TCP scale reads.
+**Status:** v0.13.4 saved workflows, in-app fixtures, managed localhost TCP and POSIX serial scale reads.
 
 ## Repository review
 
@@ -14,7 +14,7 @@ The previous Studio was a hardcoded four-node illustration with a two-printer de
 | B | Editable canvas, draggable nodes, connections and device bindings | Implemented |
 | C | In-app run engine, error propagation, execution logs, JPG links | Implemented |
 | D | Port-to-port drag linking, richer node templates, workflow export/import, run replay | Next |
-| E | TCP/serial transport adapters, conditions, timers and external software hooks | Planned |
+| E | Managed TCP and POSIX serial reads, conditions/timers and external hooks | TCP/serial reads implemented; other actions planned |
 | F | Certified virtual USB/BLE hardware integration and enterprise policies | Requires native development |
 
 ## Supported nodes
@@ -22,6 +22,8 @@ The previous Studio was a hardcoded four-node illustration with a two-printer de
 - Start: deterministic local sample trigger
 - Barcode: produces a test string in context; no keyboard or HID output
 - Scale: generates a tare-adjusted reading using a saved in-app scale fixture; unstable or overloaded results fail
+- TCP Scale: reads a saved, manually activated localhost TCP adapter
+- Serial Scale (macOS/Linux): reads a saved, manually activated POSIX PTY adapter; not a native COM/USB device
 - Capture: invokes the local printer/scan JPG engine on a saved device; does not use CUPS
 - Output: aggregates completed capture jobs for run inspection
 
@@ -74,3 +76,10 @@ The **External TCP Scale** template creates `Start → TCP Scale → Output` usi
 Existing `Scale` nodes still use in-app generated values. Captures continue using the local JPG engine; no CUPS/PrintNode/USB/BLE/remote-network requests are made by Studio.
 
 Local tests: `python3 -m pytest -q tests/test_studio_tcp.py` — covers real managed TCP socket, failure propagation, authorization and device validation.
+## v0.13.4 — External Serial Scale node
+
+Use a saved shipping-scale profile with **RS-232 / serial** transport and manually create the virtual serial endpoint in Connections. Then select **External Serial Scale** in Studio, save and run. The node opens that specific active PTY using a new OS file descriptor, sends `SI\r\n`, waits no longer than 2 seconds and reads up to 128 bytes of ASCII. It accepts only a stable, finite, nonnegative weight. History includes the raw reply, PTY path, completed/failed status and weight.
+
+Unstable (`S D`), busy (`S I`), overcapacity (`S +`), missing listener, malformed reply and timeout fail the step; downstream nodes are skipped. Streams started using `SUB` must be stopped with `UNSUB` before running Studio. A PTY is **shared** and cannot guarantee exclusive access against other processes. Studio rejects the simulator's active subscription state but cannot prevent external tools from also opening the PTY. Runs do not start a serial listener, accept a custom path, activate physical hardware, or use Windows COM.
+
+Tests: `python3 -m pytest -q tests/test_studio_serial.py tests/test_studio_tcp.py` (POSIX PTY tests skip on Windows). Manually verify the UI on both macOS architectures before calling the feature platform-certified.
