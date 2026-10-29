@@ -9,6 +9,7 @@ import copy
 import json
 import re
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ MAX_EDGES = 48
 EXPORT_FORMAT = "devices-simulator-studio"
 EXPORT_VERSION = 1
 MAX_IMPORT_BYTES = 64 * 1024
+LIVE_TIMEOUT_SECONDS = 15 * 60
+LIVE_EFFECT_TYPES = frozenset(("scale", "tcp_scale", "serial_scale", "capture"))
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
 LABEL_RE = re.compile(r"^[^\x00-\x1f]{1,80}$")
 DEVICE_KINDS = {"scale": {"scale"}, "capture": {"office_printer", "label_printer", "scanner"}}
@@ -191,6 +194,7 @@ class StudioManager:
         self.path = Path(state_dir) / "studio_workflows.json"
         self.hub = hub_store
         self.lock = threading.RLock()
+        self._live = None  # one volatile debug session per Hub; never persisted
         if not self.path.exists():
             self._write({"version": 1, "workflows": [], "runs": []})
 
@@ -480,6 +484,120 @@ class StudioManager:
             yield copy.deepcopy(trace[-1])
         status = "completed" if all(t["status"] in ("completed", "inactive") for t in trace) else "failed"
         return trace, status
+
+    def _live_current(self):
+        session = self._live
+        if session and time.monotonic() - session["last_used"] > LIVE_TIMEOUT_SECONDS:
+            # Do not silently replay pending captures after TTL expiry.
+            self._live = None
+            return None
+        return session
+
+    def _live_view(self, session):
+        order = session["graph"]["order"]
+        idx = session["index"]
+        node = None
+        if idx < len(order):
+            current = next(n for n in session["graph"]["nodes"] if n["id"] == order[idx])
+            node = {"id": current["id"], "type": current["type"],
+                    "requires_confirmation": current["type"] in LIVE_EFFECT_TYPES}
+        return {"session_id": session["id"], "workflow_id": session["workflow_id"],
+                "workflow_revision": session["revision"], "status": "paused",
+                "expected_step": idx, "total_steps": len(order),
+                "next_node": node, "steps": copy.deepcopy(session["trace"]),
+                "expires_in_seconds": max(0, int(LIVE_TIMEOUT_SECONDS -
+                    (time.monotonic() - session["last_used"]))),
+                "note": "One step per authenticated request; pending steps never execute automatically."}
+
+    def live_status(self):
+        with self.lock:
+            session = self._live_current()
+            return copy.deepcopy(self._live_view(session)) if session else None
+
+    def live_start(self, workflow_id, revision):
+        """Create one volatile paused session from an EXACT saved workflow revision."""
+        if not isinstance(workflow_id, str) or not ID_RE.fullmatch(workflow_id):
+            raise ValueError("Invalid saved workflow identifier")
+        if type(revision) is not int or revision < 1:
+            raise ValueError("Live debugging requires the saved workflow revision")
+        with self.lock:
+            if self._live_current() is not None:
+                raise RuntimeError("A debug session is already active; inspect or cancel it first")
+            saved = next((w for w in self._read()["workflows"] if w["id"] == workflow_id), None)
+            if saved is None:
+                raise LookupError("Saved workflow not found")
+            if saved["revision"] != revision:
+                raise RuntimeError("Workflow revision changed; reload and save before debugging")
+            graph = validate_workflow(saved, self.hub.list_devices())
+            self._live = {"id": uuid.uuid4().hex, "workflow_id": workflow_id,
+                          "revision": saved["revision"], "snapshot": {
+                              "name": saved["name"], "nodes": copy.deepcopy(saved["nodes"]),
+                              "edges": copy.deepcopy(saved["edges"])},
+                          "graph": graph, "cursor": self._iter_execution(graph),
+                          "index": 0, "trace": [], "started_at": now(),
+                          "last_used": time.monotonic()}
+            return self._live_view(self._live)
+
+    def _live_record(self, session, status, steps):
+        record = {
+            "id": uuid.uuid4().hex, "workflow_id": session["workflow_id"],
+            "name": session["snapshot"]["name"], "status": status,
+            "started_at": session["started_at"], "finished_at": now(),
+            "steps": copy.deepcopy(steps), "workflow_snapshot": copy.deepcopy(session["snapshot"]),
+            "workflow_revision": session["revision"], "replayed_from": None,
+            "mode": "confirmed_manual_step_debugger",
+        }
+        data = self._read()
+        data["runs"].insert(0, record)
+        data["runs"] = data["runs"][:80]
+        self._write(data)
+        return record
+
+    def live_step(self, session_id, expected_step, confirm=False):
+        """Advance exactly one node, and never duplicate it when a request is retried."""
+        if not isinstance(session_id, str) or not ID_RE.fullmatch(session_id):
+            raise ValueError("Invalid debug session identifier")
+        if type(expected_step) is not int or expected_step < 0:
+            raise ValueError("An exact nonnegative expected step is required")
+        with self.lock:
+            session = self._live_current()
+            if not session or session["id"] != session_id:
+                raise LookupError("Debug session is missing or expired")
+            if session["index"] != expected_step:
+                raise RuntimeError("Step has already advanced; reload session status")
+            next_id = session["graph"]["order"][session["index"]]
+            node = next(n for n in session["graph"]["nodes"] if n["id"] == next_id)
+            if node["type"] in LIVE_EFFECT_TYPES and confirm is not True:
+                raise ValueError("This step may access a scale or create JPG files; confirm explicitly")
+            # Generator is serialized under the same lock as normal runs.
+            item = next(session["cursor"])
+            session["trace"].append(item)
+            session["index"] += 1
+            session["last_used"] = time.monotonic()
+            if session["index"] == len(session["graph"]["order"]):
+                try:
+                    next(session["cursor"])
+                except StopIteration as done:
+                    full_trace, status = done.value
+                else:
+                    raise RuntimeError("Unexpected extra execution step")
+                record = self._live_record(session, status, full_trace)
+                self._live = None
+                return {"status": status, "finished": True, "run": record,
+                        "executed": item, "session": None}
+            return {"status": "paused", "finished": False, "executed": item,
+                    "session": self._live_view(session)}
+
+    def live_cancel(self, session_id):
+        if not isinstance(session_id, str) or not ID_RE.fullmatch(session_id):
+            raise ValueError("Invalid debug session identifier")
+        with self.lock:
+            session = self._live_current()
+            if not session or session["id"] != session_id:
+                raise LookupError("Debug session is missing or expired")
+            record = self._live_record(session, "cancelled", session["trace"])
+            self._live = None
+            return record
 
     def run(self, workflow_id, replay_run_id=None):
         """Execute current or historically snapshotted graph using FRESH fixtures."""
