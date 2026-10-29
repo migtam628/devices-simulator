@@ -159,3 +159,22 @@ with socket.create_connection(("127.0.0.1", 12500), timeout=3) as client:
 The first line is `SUB OK 500`. Later lines look like `EVT S S 1.250 kg`, `EVT S D 1.250 kg` (unstable), `EVT S +` (over-capacity), or `EVT S I` (busy). Close the socket to stop your subscription. The server ends the subscription when an injected Disconnect fault occurs or when the listener is stopped. Max eight simultaneous clients per listener; per-client socket writes time out.
 
 The continuous stream is currently **TCP only**, is not auto-started, does not send arbitrary network traffic, and does not mutate scale state. Full MT-SICS `SIR` / POSIX serial push streaming requires separate protocol validation.
+## v0.13.3 — bounded opt-in POSIX PTY stream
+
+The **macOS/Linux virtual serial fixture only** also accepts a Devices Simulator extension, `SUB` and `UNSUB`. This is **not MT-SICS SIR**, not a claimed vendor protocol, and not a Windows COM/USB device.
+
+After manually activating the serial fixture, open the advertised PTY path from your application. Write ASCII `SUB\r\n`, then read line-delimited frames:
+
+```text
+SUB OK 500
+EVT S S 0.000 kg
+EVT S S 1.500 kg
+EVT S I
+EVT END LIMIT
+```
+
+The stream sends at most **2 events/sec**, with a hard cap of **60 weight events or 30 seconds** per `SUB` command. The last line marks expiry (if the PTY output remains writable). Send `UNSUB\r\n` to receive `UNSUB OK\r\n` and stop early. Reissuing `SUB` starts a fresh bounded session. Existing `S`, `SI`, `I0`, `I2`, `I3` and `I4` commands remain request/response, including when streaming.
+
+A PTY is shared, not associated with a socket/client identity. All processes opening the same virtual serial path could receive the stream; the adapter cannot infer each client's departure. For this reason, no stream starts automatically and every subscription is time-bounded. Unread output triggers backpressure handling and terminates the stream rather than hanging the worker. A Disconnect fault suppresses further events; a Busy fault emits `EVT S I`. `SUB` and `UNSUB` are not advertised as supported MT-SICS commands in `I0`.
+
+This is a **local fixture for software testing**, not a validated integration with any manufacturer or scale model.
