@@ -126,11 +126,11 @@ def test_studio_serial_authenticated_hub_api(tmp_path):
                                            "model_id": "generic-scale", "transport": "serial"})
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
-    http = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=8)
+    client = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=8)
     auth = {"Content-Type": "application/json", "X-Devices-Token": server.hub_token}
     def post(url, data):
-        http.request("POST", url, json.dumps(data), auth)
-        resp = http.getresponse()
+        client.request("POST", url, json.dumps(data), auth)
+        resp = client.getresponse()
         return resp.status, json.loads(resp.read())
     try:
         status, result = post("/api/studio/workflows/save", graph(scale["id"]))
@@ -142,7 +142,7 @@ def test_studio_serial_authenticated_hub_api(tmp_path):
         assert status == 200 and result["run"]["status"] == "completed"
         assert result["run"]["steps"][1]["weight"] == {"value": 0.0, "unit": "kg", "status": "stable"}
     finally:
-        http.close()
+        client.close()
         server.shutdown()
         server.server_close()
         worker.join(timeout=4)
