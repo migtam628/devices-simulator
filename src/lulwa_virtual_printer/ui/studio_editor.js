@@ -1,7 +1,7 @@
 /* Advanced Studio editor helpers: local graph history, port linking, run diagnostics.
  * Does not start devices, send print jobs, or bypass backend graph validation.
  */
-let flowUndoStack=[],flowRedoStack=[],flowWireDrag=null,flowDebugRunId=null;
+let flowUndoStack=[],flowRedoStack=[],flowWireDrag=null,flowDebugRunId=null,flowConnectBranch=null;
 const FLOW_HISTORY_LIMIT=40;
 
 function flowSnapshot(){
@@ -9,7 +9,7 @@ function flowSnapshot(){
  return structuredClone({name:flowDraft.name,nodes:flowDraft.nodes,edges:flowDraft.edges});
 }
 function flowResetHistory(){
- flowUndoStack=[];flowRedoStack=[];flowWireDrag=null;flowConnect=null;flowDebugRunId=null;
+ flowUndoStack=[];flowRedoStack=[];flowWireDrag=null;flowConnect=null;flowConnectBranch=null;flowDebugRunId=null;
 }
 function flowCommit(before){
  if(!before||!flowDraft||JSON.stringify(before)===JSON.stringify(flowSnapshot()))return false;
@@ -26,7 +26,7 @@ function flowUndoEdit(redo=false){
  to.push(flowSnapshot());
  if(to.length>FLOW_HISTORY_LIMIT)to.shift();
  Object.assign(flowDraft,structuredClone(from.pop()));
- flowWireDrag=null;flowConnect=null;
+ flowWireDrag=null;flowConnect=null;flowConnectBranch=null;
  if(!flowDraft.nodes.some(n=>n.id===flowSelected))flowSelected=flowDraft.nodes[0]?.id||null;
  draw();return true;
 }
@@ -35,7 +35,14 @@ function flowMutation(update){
  update();
  flowCommit(before);draw();
 }
-function flowLinkError(source,target){
+function flowResolveBranch(source,branch){
+ const node=flowDraft?.nodes.find(n=>n.id===source);
+ if(node?.type!=="condition")return undefined;
+ if(branch==="true"||branch==="false")return branch;
+ const used=flowDraft.edges.filter(e=>e.source===source).map(e=>e.branch);
+ return !used.includes("true")?"true":!used.includes("false")?"false":null;
+}
+function flowLinkError(source,target,requestedBranch){
  const nodes=new Map((flowDraft?.nodes||[]).map(n=>[n.id,n]));
  if(!nodes.has(source)||!nodes.has(target))return "Choose two existing nodes";
  if(source===target)return "A node cannot connect to itself";
@@ -43,6 +50,12 @@ function flowLinkError(source,target){
  if(nodes.get(target).type==="start")return "Start nodes cannot receive connections";
  if(flowDraft.edges.length>=48)return "Maximum 48 connections reached";
  if(flowDraft.edges.some(e=>e.source===source&&e.target===target))return "Connection already exists";
+ if(nodes.get(source).type==="condition"){
+  const branch=flowResolveBranch(source,requestedBranch);
+  if(!branch)return "Both condition branches are already connected";
+  if(flowDraft.edges.some(e=>e.source===source&&e.branch===branch))
+   return "Condition "+branch.toUpperCase()+" branch is already connected";
+ }
  const pending=[target],seen=new Set();
  while(pending.length){
   const current=pending.pop();
@@ -53,11 +66,12 @@ function flowLinkError(source,target){
  }
  return null;
 }
-function flowLinkNodes(source,target){
- const error=flowLinkError(source,target);
+function flowLinkNodes(source,target,requestedBranch){
+ const error=flowLinkError(source,target,requestedBranch);
  if(error){showToast(error,true);return false}
- flowConnect=null;
- flowMutation(()=>flowDraft.edges.push({source,target}));
+ const branch=flowResolveBranch(source,requestedBranch);
+ flowConnect=null;flowConnectBranch=null;
+ flowMutation(()=>flowDraft.edges.push({source,target,...(branch?{branch}:{})}));
  return true;
 }
 function flowSelectedRun(){
@@ -76,13 +90,13 @@ function flowStatusForNode(id){
 function flowDebugPanel(){
  const run=flowSelectedRun();
  if(!run)return "";
- const counts={completed:0,failed:0,skipped:0};
+ const counts={completed:0,failed:0,skipped:0,inactive:0};
  for(const step of run.steps)if(Object.prototype.hasOwnProperty.call(counts,step.status))counts[step.status]++;
  const matches=flowRunMatchesDraft(run);
  const chosen=run.steps.find(step=>step.node_id===flowSelected);
  return '<div class="flow-debug-panel"><div class="row wrap"><b>Run diagnostics</b>'+button("Clear","flow-debug-clear")+'</div>'+
  '<p class="small">Run '+clean(run.id.slice(0,12))+' · '+clean(run.status)+' · '+
- counts.completed+' completed / '+counts.failed+' failed / '+counts.skipped+' skipped</p>'+
+ counts.completed+' completed / '+counts.inactive+' inactive / '+counts.failed+' failed / '+counts.skipped+' skipped</p>'+
  (matches?'<p class="small">Matching graph: green completed, red failed, gray skipped.</p>':
  '<p class="small">Graph differs from this historical run; highlights are hidden to avoid incorrect attribution.</p>')+
  (chosen&&matches?'<p class="small"><b>Selected step:</b> '+clean(chosen.status)+' — '+clean(chosen.detail||"No detail")+'</p>':'')+
@@ -90,8 +104,9 @@ function flowDebugPanel(){
  '<p class="small"><b>Failure '+clean(step.node_id)+':</b> '+clean(step.detail||"No detail")+'</p>').join("")||
  '<p class="small">No failed steps recorded.</p>')+'</div>';
 }
-function flowWireD(source,target){
- const x=source.x+188,y=source.y+45,tx=target.x,ty=target.y+45;
+function flowWireD(source,target,branch){
+ const sy=source.type==="condition"?(branch==="false"?68:22):45;
+ const x=source.x+188,y=source.y+sy,tx=target.x,ty=target.y+45;
  const bend=Math.max(45,Math.abs(tx-x)*.48);
  return 'M'+x+' '+y+' C'+(x+bend)+' '+y+' '+(tx-bend)+' '+ty+' '+tx+' '+ty;
 }
@@ -100,33 +115,33 @@ function flowUpdateWires(){
  const nodes=new Map(flowDraft.nodes.map(n=>[n.id,n]));
  for(const [i,edge] of flowDraft.edges.entries()){
   const path=E("flow-wire-"+i),a=nodes.get(edge.source),b=nodes.get(edge.target);
-  if(path&&a&&b)path.setAttribute("d",flowWireD(a,b));
+  if(path&&a&&b)path.setAttribute("d",flowWireD(a,b,edge.branch));
  }
 }
-function flowWirePreview(source,x,y){
+function flowWirePreview(source,x,y,branch){
  const canvas=E("flow-canvas"),path=E("flow-wire-preview");
  const node=flowDraft?.nodes.find(n=>n.id===source);
  if(!canvas||!path||!node)return;
  const rect=canvas.getBoundingClientRect();
- path.setAttribute("d",flowWireD(node,{x:x-rect.left,y:y-rect.top-45}));
+ path.setAttribute("d",flowWireD(node,{x:x-rect.left,y:y-rect.top-45},branch));
 }
 document.addEventListener("pointerdown",event=>{
  if(route!=="studio"||!flowDraft||event.isPrimary===false)return;
  const port=event.target.closest('[data-flow-port="out"]');
  if(!port)return;
  flowSync();
- flowWireDrag={source:port.dataset.flowPortNode,pointer:event.pointerId,
+ flowWireDrag={source:port.dataset.flowPortNode,branch:port.dataset.flowPortBranch||undefined,pointer:event.pointerId,
                startX:event.clientX,startY:event.clientY};
 });
 document.addEventListener("pointermove",event=>{
  if(!flowWireDrag||event.pointerId!==flowWireDrag.pointer)return;
- flowWirePreview(flowWireDrag.source,event.clientX,event.clientY);
+ flowWirePreview(flowWireDrag.source,event.clientX,event.clientY,flowWireDrag.branch);
 });
 document.addEventListener("pointerup",event=>{
  if(!flowWireDrag||event.pointerId!==flowWireDrag.pointer)return;
  const active=flowWireDrag;flowWireDrag=null;
  const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('[data-flow-port="in"]');
- if(target)flowLinkNodes(active.source,target.dataset.flowPortNode);
+ if(target)flowLinkNodes(active.source,target.dataset.flowPortNode,active.branch);
  else if(Math.hypot(event.clientX-active.startX,event.clientY-active.startY)>10)
   showToast("Drop on an input port, or click output then choose a destination",true);
  const path=E("flow-wire-preview");if(path)path.setAttribute("d","");

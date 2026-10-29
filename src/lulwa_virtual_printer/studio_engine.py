@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-NODE_KINDS = ("start", "barcode", "scale", "tcp_scale", "serial_scale", "capture", "output")
+NODE_KINDS = ("start", "barcode", "scale", "tcp_scale", "serial_scale", "condition", "capture", "output")
 MAX_NODES = 24
 MAX_EDGES = 48
 EXPORT_FORMAT = "devices-simulator-studio"
@@ -95,6 +95,23 @@ def validate_workflow(payload, devices):
             if not device or device.get("category") != "scale" or device.get("transport") != "serial":
                 raise ValueError("Serial scale node requires an existing scale with RS-232 / serial transport")
             normalized = {"device_id": ident_dev}
+        elif kind == "condition":
+            field = config.get("field", "weight")
+            operator = config.get("operator", "gte")
+            value = config.get("value", 1.0)
+            if field == "weight":
+                if operator not in ("gte", "lt") or type(value) not in (int, float):
+                    raise ValueError("Weight condition needs a numeric >= or < comparison")
+                if not 0 <= value <= 10000:
+                    raise ValueError("Weight condition threshold must be 0–10000")
+            elif field == "barcode":
+                if operator not in ("equals", "contains") or not isinstance(value, str):
+                    raise ValueError("Barcode condition needs a text equals/contains comparison")
+                if not 1 <= len(value) <= 80 or any(ord(c) < 32 for c in value):
+                    raise ValueError("Barcode condition value must be printable (1–80 chars)")
+            else:
+                raise ValueError("Condition field must be weight or barcode")
+            normalized = {"field": field, "operator": operator, "value": value}
         elif kind == "capture":
             ident_dev = config.get("device_id")
             device = device_map.get(ident_dev)
@@ -124,8 +141,16 @@ def validate_workflow(payload, devices):
             raise ValueError("Duplicate connection")
         if by_id[target]["type"] == "start" or by_id[source]["type"] == "output":
             raise ValueError("Start cannot receive, and Output cannot send, connections")
+        if by_id[source]["type"] == "condition":
+            if edge.get("branch") not in ("true", "false"):
+                raise ValueError("Condition edges must specify branch true or false")
+            branch = edge["branch"]
+        else:
+            if "branch" in edge:
+                raise ValueError("Only Condition edges may specify a branch")
+            branch = None
         used.add((source, target))
-        edges.append({"source": source, "target": target})
+        edges.append({"source": source, "target": target, **({"branch": branch} if branch else {})})
         outgoing[source].append(target)
         indegree[target] += 1
 
@@ -142,6 +167,11 @@ def validate_workflow(payload, devices):
                 queue.sort()
     if len(order) != len(nodes):
         raise ValueError("Workflow cannot contain cycles")
+    for node in nodes:
+        if node["type"] == "condition":
+            branches = [e["branch"] for e in edges if e["source"] == node["id"]]
+            if sorted(branches) != ["false", "true"]:
+                raise ValueError("Each Condition node requires exactly one true and one false edge")
     start_id = next(n["id"] for n in nodes if n["type"] == "start")
     reachable = {start_id}
     for nid in order:
@@ -289,17 +319,31 @@ class StudioManager:
             try:
                 graph = validate_workflow(execution, self.hub.list_devices())
                 nodes = {n["id"]: n for n in graph["nodes"]}
-                parents = {nid: [] for nid in nodes}
+                incoming = {nid: [] for nid in nodes}
                 for edge in graph["edges"]:
-                    parents[edge["target"]].append(edge["source"])
+                    incoming[edge["target"]].append(edge)
                 results = {}
                 for nid in graph["order"]:
                     node = nodes[nid]
-                    prev = [results[parent] for parent in parents[nid]]
-                    if any(r["status"] != "completed" for r in prev):
+                    prev = []
+                    blocked = False
+                    for edge in incoming[nid]:
+                        parent = results[edge["source"]]
+                        if parent["status"] in ("failed", "skipped"):
+                            blocked = True
+                        elif parent["status"] == "completed":
+                            branch = edge.get("branch")
+                            if branch is None or parent.get("decision") == (branch == "true"):
+                                prev.append(parent)
+                    if blocked:
                         results[nid] = {"status": "skipped"}
                         trace.append({"node_id": nid, "type": node["type"], "status": "skipped",
                                       "detail": "Upstream step did not complete"})
+                        continue
+                    if incoming[nid] and not prev:
+                        results[nid] = {"status": "inactive"}
+                        trace.append({"node_id": nid, "type": node["type"], "status": "inactive",
+                                      "detail": "Condition branch was not selected"})
                         continue
                     payload = {"barcode": None, "weight": None, "captures": []}
                     for item in prev:
@@ -338,6 +382,21 @@ class StudioManager:
                             payload["weight"] = {"value": reading["value"], "unit": reading["unit"],
                                                  "status": reading["status"]}
                             detail = f"Serial scale read over local PTY {reading['path']}: {reading['raw_response']}"
+                        elif kind == "condition":
+                            if cfg["field"] == "weight":
+                                reading = payload["weight"]
+                                if reading is None or reading.get("status") != "stable":
+                                    raise ValueError("Weight condition requires an upstream stable scale reading")
+                                actual = reading["value"]
+                                decision = actual >= cfg["value"] if cfg["operator"] == "gte" else actual < cfg["value"]
+                                detail = f"Weight {actual} {reading['unit']} {cfg['operator']} {cfg['value']} = {decision}"
+                            else:
+                                actual = payload["barcode"]
+                                if actual is None:
+                                    raise ValueError("Barcode condition requires an upstream barcode")
+                                decision = (actual == cfg["value"] if cfg["operator"] == "equals"
+                                            else cfg["value"] in actual)
+                                detail = f"Barcode condition {cfg['operator']} {cfg['value']!r} = {decision}"
                         elif kind == "capture":
                             job = self.hub.test_device(cfg["device_id"], title=cfg["title"])
                             if job["status"] != "rendered":
@@ -349,8 +408,13 @@ class StudioManager:
                         elif kind == "output":
                             detail = f"{len(payload['captures'])} capture job(s) in run"
                         results[nid] = {"status": "completed", "data": payload}
+                        if kind == "condition":
+                            results[nid]["decision"] = decision
                         completed = {"node_id": nid, "type": kind, "status": "completed",
                                      "detail": detail}
+                        if kind == "condition":
+                            completed["decision"] = decision
+                            completed["selected_branch"] = "true" if decision else "false"
                         if kind == "capture":
                             completed["job_id"] = job["id"]
                             completed["images"] = job.get("images", [])
@@ -361,7 +425,7 @@ class StudioManager:
                         results[nid] = {"status": "failed"}
                         trace.append({"node_id": nid, "type": kind, "status": "failed",
                                       "detail": str(exc)[:200]})
-                status = "completed" if all(t["status"] == "completed" for t in trace) else "failed"
+                status = "completed" if all(t["status"] in ("completed", "inactive") for t in trace) else "failed"
             except ValueError as exc:
                 status = "failed"
                 trace = [{"node_id": "validation", "type": "validation", "status": "failed",

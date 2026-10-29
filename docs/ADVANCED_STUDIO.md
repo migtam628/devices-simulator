@@ -1,6 +1,6 @@
 # Advanced Studio — architecture and phased delivery
 
-**Status:** v0.13.6 managed TCP/serial workflows, portable exchange/replay and improved visual graph editing.
+**Status:** v0.13.7 conditional weight/barcode routing with explicit TRUE/FALSE branch decisions.
 
 ## Repository review
 
@@ -14,7 +14,7 @@ The previous Studio was a hardcoded four-node illustration with a two-printer de
 | B | Editable canvas, draggable nodes, connections and device bindings | Implemented |
 | C | In-app run engine, error propagation, execution logs, JPG links | Implemented |
 | D | Port-to-port drag linking, richer node templates, workflow export/import, run replay | Port linking, JSON and replay implemented; richer templates planned |
-| E | Managed TCP and POSIX serial reads, conditions/timers and external hooks | TCP/serial reads implemented; other actions planned |
+| E | Managed TCP and POSIX serial reads, conditions/timers and external hooks | TCP/serial and conditional graph routing implemented; timers/hooks planned |
 | F | Certified virtual USB/BLE hardware integration and enterprise policies | Requires native development |
 
 ## Supported nodes
@@ -108,3 +108,13 @@ Tests: `python3 -m pytest -q tests/test_studio_portability.py`; run the full sui
 **Testing:** `python3 -m pytest -q tests/test_studio_editor.py` uses the actual Studio JavaScript in a Node VM for graph linking, history restoration, limit checks, port markup and run diagnostics; it also checks local HTTP asset serving. Run the full suite, then manually exercise pointer interactions, keyboard alternatives, dark mode and touch devices on Windows/macOS/Linux. UI tests are not physical-device compatibility certification.
 
 **Deferred:** Branch conditions, breakpoints, arbitrary external software hooks, signed installers, OS-native USB/BLE/Windows COM and end-to-end CUPS/PrintNode field verification remain separate tasks.
+
+## v0.13.7 — Conditional routing, branch diagnostics and templates
+
+- Add a **Condition** node after a **Scale**, **TCP Scale**, **Serial Scale** or **Barcode** input. Configure either `weight` `gte` / `lt` against a numeric threshold (using the upstream reading's unit) or `barcode` `equals` / `contains` against a printable text fixture. No code evaluation, user-defined file paths or external URL inputs.
+- Every Condition requires **exactly two distinct outgoing edges**: `branch: "true"` and `branch: "false"`. Other node types cannot set a branch label. Missing/duplicate labels, cycles and invalid comparisons fail backend validation. The new **Weight Routing** and **Barcode Routing** templates demonstrate both paths. Branch ports are separate and labeled T/F, and inspector-based linking supports keyboard users.
+- The engine evaluates the condition once from the upstream workflow context; the selected branch is activated. Unselected branch nodes become `inactive`, not `failed`, so workflows may complete with intentionally unused branches. At a merge node, a successful active path can proceed when the other path is inactive. An actual failed or blocked upstream step still makes the dependent step `skipped` and marks the run failed. The engine does not dispatch inactive capture jobs.
+- Run History stores each condition's `decision` and `selected_branch`, while inactive steps have a separate status. The inspector counts inactive nodes. Portable JSON export/import and explicit snapshot replay retain branch labels and validate them on load.
+- **Testing:** `python3 -m pytest -q tests/test_studio_conditions.py tests/test_studio_conditional_ui.py` plus the full suite. Desktop UI manual checks are still needed, especially drag/touch interactions and OS-specific executable behavior.
+
+**Not included:** generic scripting, timed conditions, webhook triggers, multi-condition expression builders, OS-native drivers, real physical printer operation, or certified scale protocol compatibility.

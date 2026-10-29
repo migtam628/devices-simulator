@@ -144,6 +144,14 @@ Run History's **Inspect run** button highlights completed, failed and skipped no
 
 See [Advanced Studio technical guide](docs/ADVANCED_STUDIO.md). Platform builds remain experimental and require interactive testing.
 
+## v0.13.7 — Advanced Studio conditional routing
+
+Advanced Studio now supports a **Condition** node with **TRUE** and **FALSE** outputs. A condition checks either an upstream scale reading (at least / less than a threshold in that reading's current unit) or a barcode string (equals / contains). Both outputs must connect to distinct downstream nodes. A selected route runs normally; the unselected route is explicitly marked **inactive**, not failed. When branches converge, a valid active route can continue through the join; errors on active upstream branches still block their dependents.
+
+Use **Weight Routing** or **Barcode Routing** in Studio to create a ready-to-edit example. Configure a Condition in its inspector, link via labeled T/F ports or the keyboard-friendly branch selector, then save and run. Run diagnostics show branch decisions and inactive steps; run replay/export/import preserve the conditional graph.
+
+The server still validates the DAG: missing or duplicate branch labels, invalid values, cycles, and unsupported node actions are rejected. Conditions never start TCP/serial adapters, print to physical devices, execute scripts, or bypass local-only restrictions. For tests and known limitations see [Advanced Studio](docs/ADVANCED_STUDIO.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
