@@ -160,6 +160,16 @@ The inspection panel provides **Previous/Next step**, direct step selection, can
 
 New endpoint: authenticated `POST /api/studio/workflows/inspect` with `{"workflow": {name, nodes, edges}, "checkpoints": ["node_id"]}`, returning `{"inspection": ...}` as a read-only result. The same backend validation applies to unsaved, imported, and saved graphs. This is a safe preflight debugger, **not** pausable/resumable live execution. See [Advanced Studio](docs/ADVANCED_STUDIO.md).
 
+## v0.13.9 — Confirmed live step-by-step workflow debugger
+
+Advanced Studio now provides **Start paused session**, **Execute next step**, **Recover active session**, and **Cancel session** alongside the read-only Inspect plan tool. Each button action executes **at most one node** in the exact saved graph revision. Starting a session does not execute anything. The only execution trigger is an explicit authenticated Step request with the precise expected step index; retries cannot repeat prior JPG captures.
+
+**Safety boundaries:** Printer capture, simulated scale reads, real managed localhost TCP scale reads, and POSIX PTY scale reads each require a separate user confirmation before execution. Inactive condition routes do not create JPG jobs. Paused sessions are **in-memory only**, expire after 15 minutes without requests, are limited to one active Hub session, and never resume automatically. Restarting the app discards paused state; already-produced JPG artifacts cannot be undone. An explicit Cancel records partial steps in Run History.
+
+**How to use:** Open Advanced Studio, save a valid graph, select Start paused session, then use Execute next step one node at a time. Confirm local-effects steps individually. Use Recover active session to rejoin a still-live session after reloading the page; Cancel session stops any remaining nodes. Run History records finished and cancelled debug runs. Existing Inspect plan remains strictly read-only.
+
+**API:** token-authenticated `POST /api/studio/debug/start`, `/status`, `/step`, and `/cancel`. For detailed limitations and test procedures see [Advanced Studio](docs/ADVANCED_STUDIO.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
