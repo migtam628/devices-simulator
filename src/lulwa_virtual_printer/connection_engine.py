@@ -377,6 +377,9 @@ class ConnectionEngine:
     def probe_serial(self, device_id):
         return self.serial.probe(device_id)
 
+    def read_serial_scale(self, device_id):
+        return self.serial.read_scale(device_id)
+
     def stop_serial(self, device_id):
         return self.serial.stop(device_id)
 
