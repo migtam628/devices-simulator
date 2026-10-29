@@ -312,7 +312,7 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
             if path == "/connections.js":
                 file = Path(__file__).with_name("ui") / "connections.js"
                 return self.send(200, file.read_bytes(), "application/javascript; charset=utf-8")
-            if path in ("/studio.js", "/studio_editor.js"):
+            if path in ("/studio.js", "/studio_editor.js", "/studio_debugger.js"):
                 file = Path(__file__).with_name("ui") / path.lstrip("/")
                 return self.send(200, file.read_bytes(), "application/javascript; charset=utf-8")
             if path in ("/", "/index.html"):
