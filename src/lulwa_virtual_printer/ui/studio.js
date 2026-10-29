@@ -76,7 +76,8 @@ function flowCard(n){
  const subtitle=d?d.name:n.type==="barcode"?(n.config.value||"Test data"):
      (n.type==="scale"||n.type==="tcp_scale"||n.type==="serial_scale")?"Choose a saved scale":n.type==="capture"?"Choose a saved printer":"Local in-app step";
  const step=flowStatusForNode(n.id),status=step?.status||"";
- return '<div class="flow-node '+t.color+(flowSelected===n.id?" selected":"")+(status?" flow-result-"+clean(status):"")+'" data-flow-node="'+clean(n.id)+'" style="left:'+n.x+'px;top:'+n.y+'px">'+
+ const activePreview=flowInspectionMatchesDraft()&&flowInspectionSteps()?.[flowInspectionIndex]?.node_id===n.id;
+ return '<div class="flow-node '+t.color+(flowSelected===n.id?" selected":"")+(status?" flow-result-"+clean(status):"")+(activePreview?" flow-inspection-active":"")+'" data-flow-node="'+clean(n.id)+'" style="left:'+n.x+'px;top:'+n.y+'px">'+
  '<div class="flow-grab" role="button" tabindex="0" aria-label="Select '+clean(t.label)+' node" data-flow-drag="'+clean(n.id)+'" data-action="flow-select:'+clean(n.id)+'"><span class="flow-node-icon">'+t.icon+'</span><span><b>'+t.label+'</b><small>'+clean(t.caption)+'</small></span><span class="flow-drag-handle" aria-hidden="true">⠿</span></div>'+
  '<div class="flow-node-foot">'+clean(subtitle)+(status?" · "+clean(status):"")+'</div>'+
  (n.type!=="start"?'<button type="button" class="flow-port in" data-flow-port="in" data-flow-port-node="'+clean(n.id)+'" data-action="flow-port-in:'+clean(n.id)+'" aria-label="Connect into '+clean(t.label)+'" title="Input port · drop or click here"></button>':"")+
@@ -188,7 +189,7 @@ function studioPage(){
  '<div class="flow-layout">'+library+'<div class="flow-welcome"><div class="flow-welcome-symbol">◇</div><h2>Design a repeatable device workflow</h2><p>Connect sample barcode input, a simulated scale, one or more printer captures, and an output check. Every run produces auditable local results.</p>'+
  button("Create from template","flow-template","primary")+button("External TCP Scale","flow-network-template")+button("External Serial Scale","flow-serial-template")+' '+button("Blank workflow","flow-new")+'</div></div>';
  const chosen=flowDraft.nodes.find(n=>n.id===flowSelected);
- const buttons='<div class="row wrap">'+button("Undo","flow-undo","",!flowUndoStack.length)+button("Redo","flow-redo","",!flowRedoStack.length)+button("Save","flow-save","primary")+button("Run locally","flow-run","",false)+button("Duplicate","flow-duplicate")+button("Export JSON","flow-export","",!flowDraft.id)+button("Delete","flow-delete","danger",!flowDraft.id)+'</div>';
+ const buttons='<div class="row wrap">'+button("Undo","flow-undo","",!flowUndoStack.length)+button("Redo","flow-redo","",!flowRedoStack.length)+button("Inspect plan","flow-inspect","primary")+button("Save","flow-save","primary")+button("Run locally","flow-run","",false)+button("Duplicate","flow-duplicate")+button("Export JSON","flow-export","",!flowDraft.id)+button("Delete","flow-delete","danger",!flowDraft.id)+'</div>';
  return heading("ADVANCED DEVICE STUDIO","Visual workflow builder","Editable DAG · local fixtures and opt-in TCP/serial scale adapters",badge("Local-only engine","green"))+
  '<div class="flow-layout">'+library+
  '<section class="flow-workspace"><div class="flow-toolbar"><label class="field"><span>Workflow name</span><input id="flow-title" maxlength="80" value="'+clean(flowDraft.name)+'"></label>'+
@@ -198,6 +199,7 @@ function studioPage(){
  (flowConnect?'<div class="notice">Connecting from <b>'+clean(flowConnect)+'</b>. Click another node as the destination. '+button("Cancel","flow-link-cancel")+'</div>':"")+
  '<div class="flow-canvas-viewport"><div class="flow-canvas" id="flow-canvas">'+flowWires()+flowDraft.nodes.map(flowCard).join("")+'</div></div>'+
  '<div class="flow-editor-footer">Drag an output port to an input port, or use the inspector destination selector. Undo/redo supports 40 edits. Save before running.</div>'+
+ '<div class="flow-inspection"><h2>Read-only workflow debugger</h2>'+flowInspectionPanel()+'</div>'+
  '<div class="flow-history"><h2>Run history</h2>'+flowHistory()+'</div></section>'+
  '<aside class="flow-inspector card"><h2>Node inspector</h2>'+flowNodeInspector()+flowDebugPanel()+
  '<div class="flow-safety"><b>Simulation boundary</b><p>Runs use local fixtures and existing localhost TCP/PTY scale endpoints. No drivers, physical USB/BLE, Windows COM, remote IPs or OS print jobs.</p></div></aside></div>';
@@ -212,6 +214,9 @@ async function flowSaveDraft(){
 }
 async function studioAction(k){
  try{
+  if(k==="flow-inspect"||k.startsWith("flow-inspect-")||k.startsWith("flow-checkpoint:")){
+   return await flowInspectionAction(k);
+  }
   if(k==="flow-undo"){flowUndoEdit();return}
   if(k==="flow-redo"){flowUndoEdit(true);return}
   if(k==="flow-debug-clear"){flowDebugRunId=null;draw();return}
