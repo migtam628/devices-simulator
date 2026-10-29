@@ -429,6 +429,9 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                     if path == "/api/connections/serial-probe":
                         return self.send(200, {"probe": connections.probe_serial(device_id)})
                     return self.send(404, {"error": "Unknown connection command"})
+                if path == "/api/studio/workflows/inspect":
+                    return self.send(200, {"inspection": studio.inspect(
+                        payload.get("workflow"), payload.get("checkpoints"))})
                 if path == "/api/studio/workflows/save":
                     return self.send(200, {"workflow": studio.save(payload)})
                 if path == "/api/studio/workflows/export":
