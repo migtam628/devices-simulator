@@ -1,6 +1,6 @@
 # Advanced Studio — architecture and phased delivery
 
-**Status:** v0.13.4 saved workflows, in-app fixtures, managed localhost TCP and POSIX serial scale reads.
+**Status:** v0.13.5 managed TCP/serial workflows, portable JSON export/import, and confirmed snapshot replay.
 
 ## Repository review
 
@@ -13,7 +13,7 @@ The previous Studio was a hardcoded four-node illustration with a two-printer de
 | A | Persistent graph schema, cycle/device validation, safe execution order | Implemented |
 | B | Editable canvas, draggable nodes, connections and device bindings | Implemented |
 | C | In-app run engine, error propagation, execution logs, JPG links | Implemented |
-| D | Port-to-port drag linking, richer node templates, workflow export/import, run replay | Next |
+| D | Port-to-port drag linking, richer node templates, workflow export/import, run replay | Portable JSON and replay implemented; richer linking/templates planned |
 | E | Managed TCP and POSIX serial reads, conditions/timers and external hooks | TCP/serial reads implemented; other actions planned |
 | F | Certified virtual USB/BLE hardware integration and enterprise policies | Requires native development |
 
@@ -48,6 +48,9 @@ The state file is studio_workflows.json under the Hub state directory (default ~
 | POST /api/studio/workflows/save | Validates and creates/updates a workflow (requires revision for updates) |
 | POST /api/studio/workflows/execute | Runs a saved workflow using id |
 | POST /api/studio/workflows/delete | Deletes a saved workflow using id |
+| POST /api/studio/workflows/export | Authenticated workflow ID to portable JSON document |
+| POST /api/studio/workflows/import | Authenticated JSON document and optional device_map; saves NEW workflow |
+| POST /api/studio/workflows/replay | Authenticated id + run_id + confirm=true, fresh snapshot execution |
 | GET /api/state | Includes Studio snapshot for editor |
 
 All POST requests require the existing local X-Devices-Token header, and the Hub is loopback-only. No arbitrary executable code, file paths or external URLs are allowed as node actions.
@@ -83,3 +86,13 @@ Use a saved shipping-scale profile with **RS-232 / serial** transport and manual
 Unstable (`S D`), busy (`S I`), overcapacity (`S +`), missing listener, malformed reply and timeout fail the step; downstream nodes are skipped. Streams started using `SUB` must be stopped with `UNSUB` before running Studio. A PTY is **shared** and cannot guarantee exclusive access against other processes. Studio rejects the simulator's active subscription state but cannot prevent external tools from also opening the PTY. Runs do not start a serial listener, accept a custom path, activate physical hardware, or use Windows COM.
 
 Tests: `python3 -m pytest -q tests/test_studio_serial.py tests/test_studio_tcp.py` (POSIX PTY tests skip on Windows). Manually verify the UI on both macOS architectures before calling the feature platform-certified.
+
+## v0.13.5 — portable workflow exchange and snapshot replay
+
+- In the Studio library choose **Import JSON** and select a portable `devices-simulator-studio` schema v1 file (max 64 KB). The device-binding screen lists referenced source device IDs and compatible saved local profiles. Confirm mappings to create a **new** workflow; validation rejects missing/unsupported node types, invalid DAGs, bad transports, or missing device profiles. Import cannot overwrite local workflow IDs or inject run-history metadata.
+- Save a workflow, then choose **Export JSON**. The downloaded `.studio.json` contains only `format`, `version` and `workflow` (name/nodes/edges). No local run history, authentication tokens, captured JPGs, revision or workflow ID are exported.
+- After a run, Run History offers **Replay snapshot**. Explicitly confirm a **new execution** of the *old saved graph*, even if the currently editable workflow has changed. Results and JPGs are generated afresh. Active TCP/PTY adapters must still be started manually; replay does not restore previous scale measurements or files. Run history records snapshot, revision and replay source run ID. Old history without a snapshot cannot be replayed.
+- APIs `POST /api/studio/workflows/export`, `/import`, `/replay` all require Hub authorization. Replay additionally requires `confirm: true` and a valid run belonging to the selected saved workflow. Only 80 recent runs remain available for replay. No custom external URLs or arbitrary scripts.
+- Backend format and run history changes are backward-compatible; old runs remain readable but cannot be replayed.
+
+Tests: `python3 -m pytest -q tests/test_studio_portability.py`; run the full suite and inspect the import/download UI manually before production use.

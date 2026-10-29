@@ -1,7 +1,7 @@
 /* Advanced Studio — local workflow graph editor.
  * Uses in-app fixtures or an explicitly started localhost scale adapter.
  */
-let flowDraft=null,flowSelected=null,flowConnect=null,flowDragging=null;
+let flowDraft=null,flowSelected=null,flowConnect=null,flowDragging=null,flowImportDoc=null;
 const flowTypes={
   start:{label:"Start",icon:"▶",caption:"Local event trigger",color:"blue"},
   barcode:{label:"Barcode",icon:"▥",caption:"Sample barcode data",color:"indigo"},
@@ -103,11 +103,43 @@ function flowNodeInspector(){
  button("Delete node","flow-remove:"+n.id,"danger",n.type==="start"||n.type==="output")+'</div>'+
  (edges.length?'<h3 class="flow-subtitle">Connections</h3>'+edges.map((e,i)=>'<div class="flow-connection"><span>'+clean(e.source===n.id?"→ "+e.target:e.source+" →")+'</span>'+button("Remove","flow-unlink:"+flowDraft.edges.indexOf(e),"")+'</div>').join(""):'<p class="small">No connections yet.</p>');
 }
+function flowImportBindings(){
+ const refs=new Map();
+ for(const node of flowImportDoc?.workflow?.nodes||[]){
+  const id=node?.config?.device_id;
+  if(typeof id==="string"&&!refs.has(id))refs.set(id,{id,type:node.type});
+ }
+ return [...refs.values()];
+}
+function flowImportCandidates(type){
+ return state.devices.filter(d=>type==="tcp_scale"?d.category==="scale"&&d.transport==="network":
+   type==="serial_scale"?d.category==="scale"&&d.transport==="serial":
+   type==="scale"?d.category==="scale":
+   type==="capture"?["office_printer","label_printer","scanner"].includes(d.category):false);
+}
+function flowImportPanel(){
+ if(!flowImportDoc)return "";
+ const refs=flowImportBindings();
+ const mappings=refs.map((ref,i)=>{
+  const candidates=flowImportCandidates(ref.type);
+  return '<label class="field"><span>'+clean(ref.type)+' · original device '+clean(ref.id)+'</span>'+
+    '<select id="flow-map-'+i+'"><option value="">Choose a compatible local device</option>'+
+    candidates.map(d=>'<option value="'+clean(d.id)+'" '+(d.id===ref.id?"selected":"")+'>'+clean(d.name)+' ('+clean(d.transport)+')</option>').join("")+
+    '</select></label>';
+ }).join("");
+ return '<div class="card" style="padding:22px"><h2>Import workflow JSON</h2>'+
+  '<p>Workflow: <strong>'+clean(flowImportDoc.workflow.name)+'</strong></p>'+
+  '<p class="small">Map imported device IDs to compatible saved local profiles. Import creates a NEW workflow and never activates connections.</p>'+
+  mappings+(refs.length?'':'<p class="small">No device mappings needed.</p>')+
+  '<div class="row wrap">'+button("Import as new workflow","flow-import-apply","primary")+
+  button("Cancel","flow-import-cancel")+'</div></div>';
+}
 function flowHistory(){
  if(!flowDraft?.id)return '<p class="small">Save the workflow to enable execution history.</p>';
  const records=flowRuns().filter(r=>r.workflow_id===flowDraft.id).slice(0,8);
  if(!records.length)return '<p class="small">No runs yet. Save and use <b>Run locally</b>.</p>';
  return records.map(r=>'<details class="flow-run"><summary><span class="flow-status '+r.status+'">'+clean(r.status)+'</span> '+clean(r.started_at.slice(0,19))+' <small>'+r.steps.length+' steps</small></summary>'+
+ (r.workflow_snapshot?'<div class="row wrap">'+button("Replay snapshot","flow-replay:"+r.id)+'</div>':'<p class="small">Legacy run has no snapshot for replay.</p>')+
  r.steps.map(st=>'<div class="flow-run-step"><span class="flow-status '+clean(st.status)+'">'+clean(st.status)+'</span><b>'+clean(st.type)+'</b><small>'+clean(st.detail)+'</small>'+
  (st.job_id&&st.images?.length?'<a class="flow-artifact" href="/api/artifacts/'+encodeURIComponent(st.job_id)+'/'+encodeURIComponent(st.images[0])+'" target="_blank" rel="noopener noreferrer">View JPG ↗</a>':"")+'</div>').join("")+'</details>').join("");
 }
@@ -118,12 +150,16 @@ function studioPage(){
  }
  const library='<div class="flow-library"><div class="flow-panel-head"><b>My workflows</b>'+button("+ New","flow-new","primary")+'</div>'+
  (flowList().length?flowList().map(w=>'<button class="flow-library-item '+(flowDraft?.id===w.id?"active":"")+'" data-action="flow-open:'+clean(w.id)+'"><b>'+clean(w.name)+'</b><small>'+w.nodes.length+' nodes · revision '+w.revision+'</small></button>').join(""):'<div class="flow-library-empty">No saved workflows yet. Start with a local test template.</div>')+
- '<div class="flow-library-bottom"><b>Templates</b>'+button("Shipping Station","flow-template")+button("External TCP Scale","flow-network-template")+button("External Serial Scale","flow-serial-template")+'<p class="small">Templates bind to existing saved fixtures.</p></div></div>';
+ '<div class="flow-library-bottom"><b>Workflow files</b>'+button("Import JSON","flow-import")+
+ '<input id="flow-import-file" type="file" accept=".json,application/json" hidden>'+
+ '<p class="small">Portable JSON · max 64 KB · remap devices locally</p><b>Templates</b>'+button("Shipping Station","flow-template")+button("External TCP Scale","flow-network-template")+button("External Serial Scale","flow-serial-template")+'<p class="small">Templates bind to existing saved fixtures.</p></div></div>';
+ if(flowImportDoc)return heading("ADVANCED DEVICE STUDIO","Import a portable workflow","Choose compatible local device profiles before creating a new workflow.")+
+ '<div class="flow-layout">'+library+'<div class="flow-workspace">'+flowImportPanel()+'</div></div>';
  if(!flowDraft)return heading("ADVANCED DEVICE STUDIO","Visual workflow builder","Connect local device fixtures and inspect each step. Nothing is sent to physical devices.")+
  '<div class="flow-layout">'+library+'<div class="flow-welcome"><div class="flow-welcome-symbol">◇</div><h2>Design a repeatable device workflow</h2><p>Connect sample barcode input, a simulated scale, one or more printer captures, and an output check. Every run produces auditable local results.</p>'+
  button("Create from template","flow-template","primary")+button("External TCP Scale","flow-network-template")+button("External Serial Scale","flow-serial-template")+' '+button("Blank workflow","flow-new")+'</div></div>';
  const chosen=flowDraft.nodes.find(n=>n.id===flowSelected);
- const buttons='<div class="row wrap">'+button("Save","flow-save","primary")+button("Run locally","flow-run","",false)+button("Duplicate","flow-duplicate")+button("Delete","flow-delete","danger",!flowDraft.id)+'</div>';
+ const buttons='<div class="row wrap">'+button("Save","flow-save","primary")+button("Run locally","flow-run","",false)+button("Duplicate","flow-duplicate")+button("Export JSON","flow-export","",!flowDraft.id)+button("Delete","flow-delete","danger",!flowDraft.id)+'</div>';
  return heading("ADVANCED DEVICE STUDIO","Visual workflow builder","Editable DAG · local fixtures and opt-in TCP/serial scale adapters",badge("Local-only engine","green"))+
  '<div class="flow-layout">'+library+
  '<section class="flow-workspace"><div class="flow-toolbar"><label class="field"><span>Workflow name</span><input id="flow-title" maxlength="80" value="'+clean(flowDraft.name)+'"></label>'+
@@ -147,6 +183,20 @@ async function flowSaveDraft(){
 }
 async function studioAction(k){
  try{
+  if(k==="flow-import"){E("flow-import-file")?.click();return}
+  if(k==="flow-import-cancel"){flowImportDoc=null;draw();return}
+  if(k==="flow-import-apply"){
+   if(!flowImportDoc)return;
+   const mapping={};
+   for(const [i,ref] of flowImportBindings().entries()){
+    const chosen=E("flow-map-"+i)?.value;
+    if(!chosen)return showToast("Select a compatible local device for every imported profile",true);
+    mapping[ref.id]=chosen;
+   }
+   const result=await post("/api/studio/workflows/import",{document:flowImportDoc,device_map:mapping});
+   flowImportDoc=null;await refresh();flowOpen(result.workflow.id);
+   showToast("Workflow imported as a new copy");return;
+  }
   if(k==="flow-network-template"){
    const d=state.devices.find(x=>x.category==="scale"&&x.transport==="network");
    if(!d)return showToast("Create a Network scale profile first",true);
@@ -179,6 +229,22 @@ async function studioAction(k){
   if(!flowDraft)return;
   flowSync();
   if(k==="flow-save"){await flowSaveDraft();showToast("Workflow saved");return}
+  if(k==="flow-export"){
+   if(!flowDraft.id)return showToast("Save the workflow before exporting",true);
+   const result=await post("/api/studio/workflows/export",{id:flowDraft.id});
+   const blob=new Blob([JSON.stringify(result.document,null,2)],{type:"application/json"});
+   const url=URL.createObjectURL(blob);
+   const link=document.createElement("a");
+   link.href=url;link.download=(flowDraft.name.toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,48)||"workflow")+".studio.json";
+   document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+   showToast("Workflow JSON exported");return;
+  }
+  if(k.startsWith("flow-replay:")){
+   if(!flowDraft.id)return;
+   if(!confirm("Replay the saved graph snapshot? This starts a NEW run against current local fixtures, can produce NEW JPG files and new scale readings, and does not reproduce the earlier result."))return;
+   const response=await post("/api/studio/workflows/replay",{id:flowDraft.id,run_id:k.slice(12),confirm:true});
+   await refresh();showToast(response.run.status==="completed"?"Snapshot replay completed":"Replay has failed/skipped steps",response.run.status!=="completed");return;
+  }
   if(k==="flow-run"){
    const saved=await flowSaveDraft();
    if(!confirm("Run this workflow against local fixtures? Printer/scan steps will create JPG files. TCP/serial nodes will contact previously activated local scale endpoints; no physical hardware or external hosts are accessed."))return;
@@ -268,4 +334,20 @@ document.addEventListener("keydown",event=>{
  if(event.key!=="Enter"&&event.key!==" ")return;
  event.preventDefault();
  studioAction(event.target.dataset.action);
+});
+
+document.addEventListener("change",async event=>{
+ if(event.target?.id!=="flow-import-file")return;
+ const file=event.target.files?.[0];
+ event.target.value="";
+ if(!file)return;
+ try{
+  if(file.size>65536)throw Error("Workflow JSON exceeds 64 KB");
+  const parsed=JSON.parse(await file.text());
+  if(parsed?.format!=="devices-simulator-studio"||parsed?.version!==1||
+     !parsed.workflow||!Array.isArray(parsed.workflow.nodes)||!Array.isArray(parsed.workflow.edges)||
+     typeof parsed.workflow.name!=="string"||parsed.workflow.nodes.length>24)
+   throw Error("Invalid or unsupported Studio workflow document");
+  flowImportDoc=parsed;draw();
+ }catch(err){showToast(err.message||"Invalid workflow JSON",true)}
 });
