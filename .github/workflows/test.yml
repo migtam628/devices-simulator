@@ -12,3 +12,21 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e '.[test]'
       - run: pytest -q
+  cups-roundtrip:
+    name: CUPS OS print-to-JPG roundtrip (Linux)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python package and CUPS scheduler
+        run: |
+          python -m pip install -e '.[test]'
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cups cups-client
+          sudo service cups start
+          lpstat -r
+      - name: Exercise real OS queue and verify persisted JPG
+        run: python tests/cups_roundtrip_smoke.py
