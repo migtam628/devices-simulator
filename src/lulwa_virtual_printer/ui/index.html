@@ -85,6 +85,7 @@ body.dark .flow-canvas-viewport,body.dark .flow-canvas{background-color:#18283b}
 const TOKEN="__HUB_TOKEN__",E=id=>document.getElementById(id);
 const icons={home:"⌂",devices:"▤",wizard:"⊕",jobs:"▧",gallery:"▥",diagnostics:"◉",integration:"⌘",studio:"◇",connections:"⊞",settings:"⚙",brother:"▣",zebra:"▤",scanner:"▱",barcode:"▥",receipt:"▦",serial:"⌁",scale:"⚖",network_device:"⌘",usb_device:"⊡",ble_device:"ᛒ",rfid:"◈",sensor:"◉"};
 const nav=[["home","Home"],["devices","My Devices"],["wizard","Create Device"],["jobs","Jobs & Queue"],["gallery","Output Gallery"],["diagnostics","Diagnostics"],["integration","System Integration"],["studio","Advanced Studio"],["connections","Connections"],["settings","Settings"]];
+let osReadiness={};
 let state={devices:[],jobs:[],presets:{},platform:"Unknown",output_dir:""},route="home",active="",draft={step:0,preset:"brother",name:"Brother Office Printer",tray:"tray-1",model_id:"generic-office",brand:"Generic",transport:"ipp",saved:""},detailEdit=null;
 const clean=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const preset=id=>state.presets[id]||{};
@@ -215,9 +216,21 @@ function detail(){const d=state.devices.find(x=>x.id===active);if(!d)return devi
 '<div class="stack"><div class="card"><h2>Installation status</h2><div class="item">Device profile '+badge("Draft")+'</div><div class="item">OS registration '+regBadge(d.preset)+'</div><div class="item">PrintNode '+badge("Not tested","amber")+'</div>'+(b||z?installControls(d.preset)+button("OS Print Test","os-test:"+d.preset,"",registration(d.preset).status!=="registered"||state.platform==="Windows"):"")+button("System Integration","integration")+'</div>'+(b||z?'<div class="card"><h2>Simulation controls</h2><label class="field"><span>Printer condition</span><select id="device-fault">'+["none","offline","paper_out","jam","paused"].map(f=>'<option value="'+f+'" '+((d.fault||"none")===f?"selected":"")+'>'+f.replaceAll("_"," ")+'</option>').join("")+'</select></label>'+(b?'<label class="field"><span>Brother paper source</span><select id="device-tray">'+["tray-1","tray-2"].map(t=>'<option value="'+t+'" '+(d.tray===t?"selected":"")+'>'+t+'</option>').join("")+'</select></label>':"")+button("Save Simulation Settings","save-settings:"+d.id,"primary")+'</div>':"")+'<div class="card"><h2>Settings</h2><div class="item">Media: '+clean(d.media)+'</div><div class="item">DPI: '+clean(d.dpi||"N/A")+'</div><div class="item">Tray: '+clean(b?d.tray:"N/A")+'</div><div class="item">Last API test: '+clean(d.last_test?.status||"Not run")+'</div></div></div></div>'}
 function diagnostics(){return heading("COMMAND CENTER","Diagnostics","Monitoring the real local service, without pretending OS installation was verified.",button("Refresh","refresh"))+
 '<div class="diag"><h2 style="margin:0">Local systems health</h2><div class="diagcards">'+[['Capture engine','Available','PDF/image → JPG'],['OS print queues','Unverified','Native printer list not queried'],['Profiles',state.devices.length,'Persistent local JSON']].map(([a,b,c])=>'<div class="diagcard"><small>'+a+'</small><strong>'+b+'</strong><small>'+c+'</small></div>').join("")+'</div><div class="grid two"><div class="diagcard"><h3>Capability checks</h3>'+[['Hub API','Running'],['JPG capture','Available'],['IPP queues','Experimental'],['ZPL renderer','Partial Code128, text and boxes'],['Scanner/HID','Planned']].map(([a,b])=>'<div class="diagrow"><span>'+a+'</span><b>'+b+'</b></div>').join("")+'</div><div class="diagcard"><h3>Recent captures</h3>'+(state.jobs.length?state.jobs.slice(0,5).map(j=>'<div class="diagrow"><span>'+clean(j.title)+'</span><b>'+clean(j.status)+'</b></div>').join(""):'<p class="small">No captured jobs yet.</p>')+'</div></div></div>'}
+function osReadinessPanel(id){
+ const report=osReadiness[id];
+ if(!report)return '<p class="small mt">Check the local queue, IPP listener and output folder before sending a print job.</p>';
+ return '<div class="notice '+(report.status==="ready"?"":"warn")+' mt"><b>Print path: '+
+   clean(report.status.toUpperCase())+'</b><p class="small">Hub output: '+clean(report.hub_output_dir)+
+   '<br>IPP output: '+clean(report.ipp_output_dir||"not detected")+'</p>'+
+   report.checks.map(c=>'<div class="item">'+badge(c.ok?"PASS":"BLOCKED",c.ok?"green":"amber")+
+    '<span class="small"><b>'+clean(c.key)+'</b>: '+clean(c.detail)+
+    (c.next_step?'<br>'+clean(c.next_step):"")+'</span></div>').join("")+'</div>';
+}
 function integration(){return heading("SYSTEM INTEGRATION","OS Printer & Scanner Setup","Install real operating-system printer queues and verify registration.",button("Refresh status","refresh"))+
 '<div class="notice warn"><b>Printer installation is experimental</b>The hub can register Brother and Zebra queues, but OS print-dialog jobs must still be tested on this machine. Flatbed scanning still needs eSCL/AirScan; macOS virtual barcode HID is a separate temporary keyboard.</div>'+
-'<div class="grid two mt">'+["brother","zebra"].map(id=>'<div class="card"><div class="cardhead"><h2>'+clean(preset(id).label)+'</h2>'+regBadge(id)+'</div><p class="small">'+clean(registration(id).queue)+'</p>'+installControls(id)+button("Verify OS Print → JPG","os-test:"+id,"",registration(id).status!=="registered"||state.platform==="Windows")+'</div>').join("")+'</div>'+
+'<div class="grid two mt">'+["brother","zebra"].map(id=>'<div class="card"><div class="cardhead"><h2>'+clean(preset(id).label)+'</h2>'+regBadge(id)+'</div><p class="small">'+clean(registration(id).queue)+'</p>'+installControls(id)+button("Check print path","os-readiness:"+id)+
+ osReadinessPanel(id)+button("Verify OS Print → JPG","os-test:"+id,"",
+ registration(id).status!=="registered"||state.platform==="Windows"||osReadiness[id]?.status!=="ready")+'</div>').join("")+'</div>'+
 '<div class="card mt"><h2>Virtual Barcode Input Simulator</h2>'+hidControls()+'</div><div class="grid three mt">'+[['Local hub','Running','Local API'],['IPP endpoint',state.ipp_service_ready?"Running":"Offline",'127.0.0.1:8631'],['OS verification','Available','Queue enumeration and endpoint match']].map(([a,b,c])=>'<div class="card"><h2>'+a+'</h2>'+badge(b,b==="Running"||b==="Available"?"green":"amber")+'<p class="muted mt">'+c+'</p></div>').join("")+'</div>'+
 '<div class="card mt"><h2>Further work</h2>'+['Print one test page from the OS dialog and verify JPG capture','Brother tray selection and Zebra label media roundtrip','Advanced ZPL and Windows compatibility','Scanner eSCL / WIA support (separate device transport)','PrintNode integration'].map(x=>'<div class="item"><span class="pill amber">Test / Pending</span>'+x+'</div>').join("")+'</div>'}
 function studio(){return studioPage();}
@@ -265,6 +278,14 @@ if(k.startsWith("save-settings:")){
   try{await post("/api/devices/"+id+"/settings",{fault:E("device-fault")?.value,tray:E("device-tray")?.value||"tray-1"});
     await refresh();showToast("Simulated device settings saved")}
   catch(error){showToast(error.message,true)}return;
+}
+if(k.startsWith("os-readiness:")){
+ const id=k.slice("os-readiness:".length);
+ try{const result=await post("/api/system/print-readiness",{preset:id});
+  osReadiness[id]=result.readiness;draw();
+  showToast(result.readiness.status==="ready"?"Print path is ready":"Print path needs attention",
+    result.readiness.status!=="ready")}
+ catch(error){showToast(error.message,true)}return;
 }
 if(k.startsWith("os-test:")){
   const id=k.slice("os-test:".length);

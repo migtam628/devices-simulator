@@ -26,7 +26,7 @@ from .native_printers import get_registration, install_printer, uninstall_printe
 from .hid_barcode import MacBarcodeHID
 from .mac_scale_hid import MacScaleHID
 from .device_catalog import BY_ID
-from .os_print_test import verify_print_roundtrip
+from .os_print_test import print_readiness, verify_print_roundtrip
 from .device_catalog import public_catalog, select_model
 from .studio_engine import StudioManager
 from .connection_engine import ConnectionEngine
@@ -377,9 +377,17 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                 path = urlparse(self.path).path
                 if path == "/api/devices":
                     return self.send(201, {"device": store.create_device(payload)})
+                if path == "/api/system/print-readiness":
+                    return self.send(200, {"readiness": print_readiness(
+                        str(payload.get("preset", "")), store.output_dir)})
                 if path == "/api/system/print-test":
                     if payload.get("confirm") is not True:
                         return self.send(400, {"error": "Confirm this OS print test first"})
+                    ready = print_readiness(str(payload.get("preset", "")), store.output_dir)
+                    if ready["status"] != "ready":
+                        reasons = "; ".join(c["detail"] for c in ready["checks"] if not c["ok"])
+                        return self.send(409, {"error": "Print path not ready: " + reasons[:600],
+                                               "readiness": ready})
                     result = verify_print_roundtrip(str(payload.get("preset", "")), store.output_dir)
                     return self.send(200, {"verification": result})
                 if path.startswith("/api/scale-hid/"):

@@ -170,6 +170,16 @@ Advanced Studio now provides **Start paused session**, **Execute next step**, **
 
 **API:** token-authenticated `POST /api/studio/debug/start`, `/status`, `/step`, and `/cancel`. For detailed limitations and test procedures see [Advanced Studio](docs/ADVANCED_STUDIO.md).
 
+## v0.14.0 — OS Print-to-JPG reliability and fault diagnosis
+
+**Real Linux CUPS end-to-end verification is now part of CI.** On Ubuntu 22.04, the workflow installs and starts the actual CUPS scheduler, registers the simulator's Brother and Zebra IPP Everywhere printer queues with `lpadmin`, prints unique marked PDFs using `lp`, then confirms that **each job produced a non-empty JPG on disk**. This tests the real OS spooler → IPP → rendering path rather than only the in-app capture API. Linux CI passed on both queues. **macOS and Windows print-dialog compatibility remain unverified on actual user computers.**
+
+**Find why JPGs are missing:** Open **System Integration → Check print path** for the Brother or Zebra queue. This read-only diagnostic checks OS queue identity, the IPP listener on localhost:8631, whether its output directory matches the Hub's output directory, and whether the CUPS queue is enabled. It gives specific repair instructions instead of treating a successfully queued job as successful printing. The **Verify OS Print → JPG** button now requires a ready path and still checks the actual generated JPG.
+
+A common cause is an **old IPP service using a different --output directory**, so the app's Gallery looks empty even though another process captured the print job. Restart the stale service and run both the Hub and IPP with the same output folder; don't delete the original captured files.
+
+For setup, log collection, manual Linux/macOS tests, and a checklist for OS registration problems, see **[OS printing diagnostics](docs/OS_PRINT_DIAGNOSTICS.md)**. These builds remain experimental and are not vendor-certified physical printers.
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

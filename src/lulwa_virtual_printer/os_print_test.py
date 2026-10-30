@@ -16,6 +16,78 @@ from pathlib import Path
 from .native_printers import PRINTERS, get_registration
 
 
+
+def print_readiness(preset: str, hub_output: str | Path, *,
+                    registration=get_registration, opener=urlopen,
+                    runner=subprocess.run, system: str | None = None) -> dict:
+    """Read-only check: does the OS queue point at our live, matching output root?
+
+    This does not submit a job, create output directories, or change CUPS.
+    Every check has an actionable result to distinguish 'not installed' from
+    'CUPS accepted but the JPG is somewhere else'.
+    """
+    if preset not in PRINTERS:
+        raise ValueError("Only the simulated Brother/Zebra queues are supported")
+    host = system or platform.system()
+    queue, _label, uri = PRINTERS[preset]
+    root = Path(hub_output).expanduser().resolve()
+    checks = []
+    def check(key, okay, detail, action):
+        checks.append({"key": key, "ok": bool(okay), "detail": str(detail)[:450],
+                       "next_step": None if okay else action})
+
+    if host not in ("Linux", "Darwin"):
+        check("platform", False, "Automatic spooler test needs macOS or Linux CUPS lp.",
+              "For Windows, use the IPP diagnostics and verify the queue manually; a native Windows end-to-end test is not implemented.")
+    else:
+        check("platform", True, f"{host} CUPS available for readiness checks", "")
+
+    state = registration(preset)
+    found = state.get("status") == "registered"
+    check("queue", found,
+          state.get("details") or f"Queue {queue} registration status: {state.get('status', 'unknown')}",
+          "Start the IPP service, then install the simulator printer queue in System Integration. A conflicting queue name must be resolved manually.")
+    # The IPP diagnostics endpoint is deliberately bound to 127.0.0.1.
+    observed = None
+    try:
+        with opener("http://127.0.0.1:8631/diagnostics", timeout=2) as response:
+            observed = json.load(response)
+        if not isinstance(observed, dict) or not isinstance(observed.get("output_dir"), str):
+            observed = None
+    except (OSError, ValueError, TimeoutError):
+        pass
+    check("ipp_service", observed is not None,
+          "Local IPP diagnostics responding" if observed else "IPP service is not responding with its output path on port 8631",
+          "Start Devices Simulator's IPP service. Confirm another process is not occupying port 8631.")
+
+    ipp_root = (Path(observed["output_dir"]).expanduser().resolve() if observed else None)
+    match = ipp_root is not None and ipp_root == root
+    check("output_directory", match,
+          f"Hub: {root}; IPP: {ipp_root if ipp_root else 'unavailable'}",
+          "The Hub and IPP services must use the SAME --output folder. Restart the old IPP process, then launch both services with matching paths.")
+
+    if host in ("Linux", "Darwin") and found:
+        try:
+            result = runner(["lpstat", "-p", queue, "-l"], capture_output=True,
+                            text=True, timeout=5)
+            output = ((result.stdout or "") + " " + (result.stderr or "")).strip()
+            # CUPS emits 'printer NAME disabled since ...' when queue is stopped.
+            enabled = result.returncode == 0 and "disabled" not in output.lower()
+            check("queue_enabled", enabled, output[:450] or "CUPS queue status unavailable",
+                  "Enable the simulator queue using cupsenable, clear or cancel stalled jobs, then retry the marked OS Print Test.")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            check("queue_enabled", False, str(exc),
+                  "Confirm CUPS is running and lpstat can query the printer.")
+    elif host in ("Linux", "Darwin"):
+        check("queue_enabled", False, "No verified queue to query",
+              "Install and verify the simulator OS printer queue first.")
+
+    return {"preset": preset, "queue": queue, "uri": uri, "platform": host,
+            "status": "ready" if all(item["ok"] for item in checks) else "blocked",
+            "checks": checks, "hub_output_dir": str(root),
+            "ipp_output_dir": str(ipp_root) if ipp_root else None,
+            "scope": "read_only_os_print_path"}
+
 def verify_print_roundtrip(preset: str, output: str | Path, *,
                            registration=get_registration, runner=subprocess.run,
                            sleep=time.sleep, timeout=35.0) -> dict:

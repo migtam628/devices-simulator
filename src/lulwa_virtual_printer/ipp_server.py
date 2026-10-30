@@ -206,6 +206,7 @@ def create_handler(output: str | Path):
                 with lock:
                     payload = json.dumps({
                         'events': list(events),
+                        'output_dir': str(output),
                         'jobs_seen': len(jobs),
                         'jobs': [{'job_id': j['job_id'], 'state': j['state'],
                                   'image_count': len(j.get('images', []))}
