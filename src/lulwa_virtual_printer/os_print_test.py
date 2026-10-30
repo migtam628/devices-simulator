@@ -17,6 +17,85 @@ from .native_printers import PRINTERS, get_registration
 
 
 
+
+def windows_spooler_status(queue: str, *, runner=subprocess.run) -> dict:
+    """Read Windows spooler/queue health without submitting or changing jobs.
+
+    queue is a fixed application-owned printer name supplied by PRINTERS.
+    Do not expose this helper for arbitrary caller-provided printer names.
+    """
+    if queue not in {spec[0] for spec in PRINTERS.values()}:
+        raise ValueError("Only simulator-owned queue names can be inspected")
+    script = (
+        "$ErrorActionPreference='Stop';"
+        "$s=Get-Service -Name Spooler -ErrorAction Stop;"
+        "$p=Get-Printer -Name '" + queue + "' -ErrorAction Stop;"
+        "[pscustomobject]@{Spooler=[string]$s.Status;"
+        "Status=[string]$p.PrinterStatus;"
+        "WorkOffline=[bool]$p.WorkOffline;"
+        "PortName=[string]$p.PortName} | ConvertTo-Json -Compress"
+    )
+    try:
+        response = runner(["powershell.exe", "-NoProfile", "-NonInteractive",
+                           "-Command", script],
+                          capture_output=True, text=True, timeout=8)
+        if response.returncode:
+            return {"spooler": False, "queue_enabled": False,
+                    "detail": str(response.stderr or response.stdout).strip()[:250]
+                              or "Windows print management query failed"}
+        data = json.loads(response.stdout)
+        if not isinstance(data, dict):
+            raise ValueError("Windows queue status is not an object")
+        spooler = data.get("Spooler") == "Running"
+        status = str(data.get("Status", "Unknown"))
+        blocked = {"paused", "offline", "error", "notavailable",
+                   "paperout", "userintervention", "serverunknown", "dooropen"}
+        enabled = spooler and not data.get("WorkOffline", False) and status.lower().replace(" ", "") not in blocked
+        return {"spooler": spooler, "queue_enabled": enabled,
+                "status": status, "port_name": str(data.get("PortName", ""))[:220],
+                "detail": ("Spooler " + str(data.get("Spooler")) +
+                           "; printer " + status +
+                           ("; WorkOffline=true" if data.get("WorkOffline") else ""))}
+    except (OSError, subprocess.TimeoutExpired, ValueError, TypeError) as exc:
+        return {"spooler": False, "queue_enabled": False,
+                "detail": ("Unable to inspect Windows Spooler: " + str(exc))[:250]}
+
+
+def submit_windows_sample(queue: str, marker: str, *, runner=subprocess.run):
+    """Opt-in real Windows GDI queue submission (not direct IPP or file capture).
+
+    A PrintDocument sends a *single sample page* to the chosen local queue.
+    The OS/IPP driver determines the delivered MIME type; we only report a
+    successful roundtrip after finding the matching persisted JPG.
+    """
+    if queue not in {spec[0] for spec in PRINTERS.values()}:
+        raise ValueError("Refusing to print to an unknown Windows printer")
+    if not marker.startswith("DS-OS-TEST-") or not marker[11:].isalnum() or len(marker) > 50:
+        raise ValueError("Invalid print-test marker")
+    script = (
+        "$ErrorActionPreference='Stop';"
+        "Add-Type -AssemblyName System.Drawing;"
+        "$script:DSLabel='" + marker + "';"
+        "$d=New-Object System.Drawing.Printing.PrintDocument;"
+        "$d.PrinterSettings.PrinterName='" + queue + "';"
+        "if(-not $d.PrinterSettings.IsValid){throw 'Simulator printer is invalid'};"
+        "$d.DocumentName=$script:DSLabel;"
+        "$d.PrintController=New-Object System.Drawing.Printing.StandardPrintController;"
+        "$d.add_PrintPage({param($sender,$e)"
+        "$font=New-Object System.Drawing.Font('Arial',12);"
+        "try{$e.Graphics.DrawString(('DEVICES SIMULATOR OS TEST '+$script:DSLabel),"
+        "$font,[System.Drawing.Brushes]::Black,25,50);"
+        "$e.HasMorePages=$false}finally{$font.Dispose()}});"
+        "try{$d.Print();Write-Output ('Queued '+$script:DSLabel)}"
+        "finally{$d.Dispose()}"
+    )
+    try:
+        return runner(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                      capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("Windows spooler submission failed: " + str(exc)[:250]) from exc
+
+
 def print_readiness(preset: str, hub_output: str | Path, *,
                     registration=get_registration, opener=urlopen,
                     runner=subprocess.run, system: str | None = None) -> dict:
@@ -36,11 +115,13 @@ def print_readiness(preset: str, hub_output: str | Path, *,
         checks.append({"key": key, "ok": bool(okay), "detail": str(detail)[:450],
                        "next_step": None if okay else action})
 
-    if host not in ("Linux", "Darwin"):
-        check("platform", False, "Automatic spooler test needs macOS or Linux CUPS lp.",
-              "For Windows, use the IPP diagnostics and verify the queue manually; a native Windows end-to-end test is not implemented.")
+    if host not in ("Linux", "Darwin", "Windows"):
+        check("platform", False, "OS print tests are supported on Windows, macOS and Linux.",
+              "Use a supported desktop operating system.")
     else:
-        check("platform", True, f"{host} CUPS available for readiness checks", "")
+        description = ("Windows native GDI spooler sample (experimental)" if host == "Windows"
+                       else f"{host} CUPS sample")
+        check("platform", True, description, "")
 
     state = registration(preset)
     found = state.get("status") == "registered"
@@ -81,6 +162,17 @@ def print_readiness(preset: str, hub_output: str | Path, *,
     elif host in ("Linux", "Darwin"):
         check("queue_enabled", False, "No verified queue to query",
               "Install and verify the simulator OS printer queue first.")
+    elif host == "Windows" and found:
+        health = windows_spooler_status(queue, runner=runner)
+        check("spooler", health["spooler"], health["detail"],
+              "Start the Windows Print Spooler service; check Windows Services and printing permissions.")
+        check("queue_enabled", health["queue_enabled"], health["detail"],
+              "Check that the simulator's Windows printer queue is online and not paused/offline.")
+    elif host == "Windows":
+        check("spooler", False, "No verified simulator queue to inspect",
+              "Verify the exact simulator queue and IPP endpoint before sending a test.")
+        check("queue_enabled", False, "No verified simulator queue to inspect",
+              "Install the simulator Windows IPP printer queue first.")
 
     return {"preset": preset, "queue": queue, "uri": uri, "platform": host,
             "status": "ready" if all(item["ok"] for item in checks) else "blocked",
@@ -94,30 +186,34 @@ def verify_print_roundtrip(preset: str, output: str | Path, *,
     if preset not in PRINTERS:
         raise ValueError("Only simulated Brother/Zebra printers can be tested")
     system = platform.system()
-    if system not in ("Linux", "Darwin"):
-        raise RuntimeError("Native OS print roundtrip currently requires macOS/Linux CUPS lp")
+    if system not in ("Linux", "Darwin", "Windows"):
+        raise RuntimeError("Native OS print roundtrip needs Windows, macOS or Linux")
     state = registration(preset)
     if state.get("status") != "registered":
         raise RuntimeError("OS printer queue and simulator endpoint must be verified before printing")
-    import fitz
     name = PRINTERS[preset][0]
     tag = "DS-OS-TEST-" + uuid.uuid4().hex[:12]
     started = datetime.now(timezone.utc)
-    width, height = (288, 432) if preset == "zebra" else (612, 792)
-    pdf = fitz.open()
-    page = pdf.new_page(width=width, height=height)
-    page.insert_text((25, 60), "DEVICES SIMULATOR - OS TEST", fontsize=14)
-    page.insert_text((25, 95), tag, fontsize=11)
-    data = pdf.tobytes()
-    pdf.close()
-    try:
-        result = runner(["lp", "-d", name, "-t", tag, "-"],
-                        input=data, capture_output=True, timeout=20)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"OS print submission failed: {exc}") from exc
+    if system == "Windows":
+        result = submit_windows_sample(name, tag, runner=runner)
+    else:
+        import fitz
+        width, height = (288, 432) if preset == "zebra" else (612, 792)
+        pdf = fitz.open()
+        page = pdf.new_page(width=width, height=height)
+        page.insert_text((25, 60), "DEVICES SIMULATOR - OS TEST", fontsize=14)
+        page.insert_text((25, 95), tag, fontsize=11)
+        data = pdf.tobytes()
+        pdf.close()
+        try:
+            result = runner(["lp", "-d", name, "-t", tag, "-"],
+                            input=data, capture_output=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"OS print submission failed: {exc}") from exc
     if result.returncode:
         error = result.stderr.decode("utf-8", "replace") if isinstance(result.stderr, bytes) else str(result.stderr)
-        raise RuntimeError("CUPS rejected the print job: " + error[:350])
+        raise RuntimeError(("Windows spooler" if system == "Windows" else "CUPS") +
+                           " rejected the print job: " + error[:350])
     output = Path(output).expanduser().resolve()
     deadline = time.monotonic() + timeout
     expected_profiles = ("zebra",) if preset == "zebra" else ("brother-tray1", "brother-tray2")
@@ -166,6 +262,8 @@ def verify_print_roundtrip(preset: str, output: str | Path, *,
         sleep(0.4)
 
     def inspect_queue():
+        if system == "Windows":
+            return windows_spooler_status(name)["detail"]
         try:
             p = subprocess.run(["lpstat", "-p", name, "-l"], capture_output=True,
                                text=True, timeout=4)
@@ -193,10 +291,15 @@ def verify_print_roundtrip(preset: str, output: str | Path, *,
         except Exception:
             return "IPP diagnostics unavailable"
 
-    hints = ["CUPS accepted the spool request, but the simulator could not confirm a JPG."]
+    hints = [("Windows accepted a GDI spool submission" if system == "Windows"
+              else "CUPS accepted the spool request") +
+             ", but the simulator could not confirm a JPG."]
     if last_error:
         hints.append("Renderer result: " + str(last_error)[:160])
     hints.append("IPP activity: " + inspect_ipp())
-    hints.append("CUPS queue: " + inspect_queue())
-    hints.append("If the printer is stuck in macOS, cancel the stalled job and retry after installing the updated app. Do not treat CUPS acceptance as successful output.")
+    hints.append(("Windows queue: " if system == "Windows" else "CUPS queue: ") + inspect_queue())
+    if system == "Windows":
+        hints.append("Windows IPP class drivers may submit document formats this experimental JPG renderer does not accept. Check the latest IPP document_format and capture_status above; queued does not mean rendered.")
+    else:
+        hints.append("If the printer is stuck, cancel the stalled test job and retry. Do not treat CUPS acceptance as successful output.")
     raise RuntimeError(" ".join(hints))
