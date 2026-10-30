@@ -71,7 +71,10 @@ def get_registration(preset: str, system: str | None = None, run=run_command) ->
         # class-driver port names vary, so endpoint identity is checked separately.
         escaped = name.replace("'", "''")
         script = ("$p=Get-Printer -Name '" + escaped + "' -ErrorAction SilentlyContinue; "
-                  "if ($p) { [pscustomobject]@{Name=$p.Name;PortName=$p.PortName} | ConvertTo-Json -Compress }")
+                  "if ($p) { $port=Get-PrinterPort -Name $p.PortName -ErrorAction SilentlyContinue; "
+                  "[pscustomobject]@{Name=$p.Name;PortName=$p.PortName; "
+                  "PrinterHostAddress=$port.PrinterHostAddress;Description=$port.Description} "
+                  "| ConvertTo-Json -Compress }")
         result = _powershell(script, run)
         if result.returncode != 0:
             base.update(status="unknown", details=(result.stderr or result.stdout).strip()[:500])
@@ -88,11 +91,17 @@ def get_registration(preset: str, system: str | None = None, run=run_command) ->
             base.update(status="unverified", details="Unexpected Windows printer identity")
             return base
         actual_port = found.get("PortName") or ""
+        # Windows' class driver may use an opaque port name; only a *visible*
+        # exact simulator endpoint is sufficient to verify identity. Host-only
+        # 127.0.0.1 is NOT enough: it could route to another local service.
+        candidates = (actual_port, found.get("PrinterHostAddress") or "",
+                      found.get("Description") or "")
         base["actual_uri"] = actual_port
-        if uri in actual_port or uri.replace("ipp://", "http://") in actual_port:
+        if any(uri in str(value) or uri.replace("ipp://", "http://") in str(value)
+               for value in candidates):
             base.update(status="registered", details="Windows printer and endpoint verified")
         else:
-            base.update(status="unverified", details="Printer name detected; IPP endpoint not proven")
+            base.update(status="unverified", details="Printer detected, but its Windows IPP port hides the endpoint; do not send a test until the exact URL can be verified")
         return base
     base.update(status="unsupported", details=f"OS not supported: {system}")
     return base
