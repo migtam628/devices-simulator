@@ -47,6 +47,6 @@ def test_dashboard_inline_javascript_has_valid_syntax():
     for script in parser.inline:
         if not script.strip():
             continue
-        result = subprocess.run([node, "--check"], input=script, text=True,
+        result = subprocess.run([node, "--check"], input=script.encode("utf-8"),
                                 capture_output=True, timeout=15)
-        assert result.returncode == 0, result.stderr
+        assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
