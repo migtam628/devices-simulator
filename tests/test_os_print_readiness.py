@@ -90,13 +90,14 @@ def test_unverified_queue_no_shell_mutation_or_print_submission(tmp_path):
     assert commands == []
 
 
-def test_windows_report_does_not_claim_working_os_spooler(tmp_path):
-    report = print_readiness("zebra", tmp_path, registration=registered,
+def test_windows_unverified_queue_does_not_claim_working_os_spooler(tmp_path):
+    report = print_readiness("zebra", tmp_path,
+        registration=lambda _name: {"status": "unverified", "details": "IPP URL not verified"},
         opener=lambda _url, timeout: FakeHTTP({"output_dir": str(tmp_path)}),
-        runner=lambda *_a, **_k: pytest.fail("Windows must not invoke lpstat"),
+        runner=lambda *_a, **_k: pytest.fail("Unverified Windows queue must never submit or probe"),
         system="Windows")
     assert report["status"] == "blocked"
-    assert "platform" in {x["key"] for x in report["checks"] if not x["ok"]}
+    assert "queue" in {x["key"] for x in report["checks"] if not x["ok"]}
 
 
 def test_invalid_printer_name_rejected_before_any_probe(tmp_path):
