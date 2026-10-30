@@ -6,7 +6,7 @@ test and is never used to mark an order shipped.
 from __future__ import annotations
 import json
 import platform
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.request import urlopen
 import subprocess
 import time
@@ -244,7 +244,10 @@ def verify_print_roundtrip(preset: str, output: str | Path, *,
                     created = (datetime.fromisoformat(j["created_at"].replace("Z", "+00:00"))
                                if j.get("created_at") else
                                datetime.fromtimestamp(metadata_path.stat().st_mtime, tz=timezone.utc))
-                    if created < started:
+                    # Some filesystems round modification times to whole seconds.
+                    # A unique per-job UUID marker is still required below, so
+                    # allow small timestamp quantization without accepting other jobs.
+                    if created < started - timedelta(seconds=2):
                         continue
                 except (ValueError, OSError, KeyError, TypeError):
                     continue

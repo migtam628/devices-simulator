@@ -157,13 +157,19 @@ def test_gdi_print_positive_requires_matching_created_jpg(tmp_path,monkeypatch):
         folder=tmp_path/"zebra"/tag
         folder.mkdir(parents=True)
         (folder/"page-001.jpg").write_bytes(b"test jpg bytes")
-        (folder/"job.json").write_text(json.dumps({
+        # Simulate filesystem timestamp rounding by replacing the mtime
+        # with the previous whole second. The UUID marker still proves identity.
+        metadata=folder/"job.json"
+        metadata.write_text(json.dumps({
             "id":"captured-from-windows","title":tag,"profile":"zebra",
             "status":"rendered","images":["page-001.jpg"]}),encoding="utf-8")
+        import os,time
+        t=int(time.time())
+        os.utime(metadata,(t,t))
         return subprocess.CompletedProcess(command,0,"Queued","")
     result=verify_print_roundtrip("zebra",tmp_path,
         registration=lambda _id:{"status":"registered"},
-        runner=runner,timeout=0.5,sleep=lambda _:None)
+        runner=runner,timeout=1.5,sleep=lambda _:None)
     assert result["result"]=="os_end_to_end_verified"
     assert result["job_id"]=="captured-from-windows"
     assert result["scope"]=="os_spooler_to_ipp_to_jpg"
