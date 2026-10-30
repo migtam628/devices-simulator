@@ -180,6 +180,14 @@ A common cause is an **old IPP service using a different --output directory**, s
 
 For setup, log collection, manual Linux/macOS tests, and a checklist for OS registration problems, see **[OS printing diagnostics](docs/OS_PRINT_DIAGNOSTICS.md)**. These builds remain experimental and are not vendor-certified physical printers.
 
+## v0.14.1 — Experimental Windows spooler diagnostics and JPG probe
+
+On Windows, the System Integration **Check print path** now inspects the native Print Spooler service and saved queue status, in addition to the loopback IPP listener and output folder. When the printer's **exact simulator IPP endpoint is verifiable**, the **Verify OS Print → JPG** action offers an explicitly confirmed native Windows GDI sample page through the installed queue. It does not bypass the Windows spooler or submit directly to the simulator's IPP endpoint.
+
+A successful PrintDocument submission is **not counted as printing success** until a unique tagged job appears with a nonempty JPG. Windows' IPP class driver may emit an unsupported document format; the app reports an error rather than falsely claiming output. The UI also refuses to run the test if the Windows port is opaque and the simulator cannot establish the exact endpoint—an installed queue name by itself is not proof of ownership. Review the diagnostics to resolve the problem.
+
+**Verified in automated tests:** Print Spooler status classification, endpoint restrictions, approval gates, safe sample script generation, missing-JPG detection, and Windows PowerShell syntax. **Not yet verified:** a live Windows desktop's IPP queue actually delivers raster/PDF output that the simulator can render. This is a device-side capability test, not Windows IPP certification. See [Windows printing troubleshooting](docs/OS_PRINT_DIAGNOSTICS.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
