@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .engine import capture
+from .engine import capture, detect_format
 from .ipp import (
     BOOLEAN, ENUM, INTEGER, KEYWORD, LANGUAGE, MIMETYPE,
     NAME, RESOLUTION, TEXT, URI, parse_request, response,
@@ -23,6 +23,56 @@ from .ipp import (
 
 LOGGER = logging.getLogger(__name__)
 MAX_IPP_SIZE = 25 * 1024 * 1024 + 128 * 1024
+STANDARD_FORMATS = frozenset(('application/pdf', 'image/jpeg', 'image/png'))
+ZPL_FORMAT = 'application/vnd.zebra-zpl'
+RAW_ZPL_FORMAT = 'application/vnd.cups-raw'
+
+
+def supported_document_formats(key: str) -> list[str]:
+    """Advertise only the formats the *selected* virtual printer can render."""
+    formats = ['application/pdf', 'image/jpeg', 'image/png']
+    if key == 'zebra':
+        # Vendor ZPL is experimental; not IPP Everywhere raster compliance.
+        formats.append(ZPL_FORMAT)
+    return formats
+
+
+def format_supported(key: str, fmt: str | None) -> bool:
+    """Preserve IPP octet-stream autodetection, restrict raw ZPL to Zebra."""
+    return (fmt in STANDARD_FORMATS or fmt == 'application/octet-stream'
+            or key == 'zebra' and fmt in (ZPL_FORMAT, RAW_ZPL_FORMAT))
+
+
+def verify_document_format(key: str, fmt: str | None, document: bytes) -> str | None:
+    """Reject mismatched MIME/magic and unsupported raw languages before capture."""
+    if not format_supported(key, fmt):
+        return 'Unsupported document-format: ' + str(fmt)
+    if not document:
+        return 'Missing document payload'
+    try:
+        actual = detect_format(document)
+    except ValueError:
+        return 'Unknown or unsupported document data'
+    if actual == 'zpl':
+        if key != 'zebra':
+            return 'ZPL is supported only on the simulated Zebra queue'
+        if fmt not in (ZPL_FORMAT, RAW_ZPL_FORMAT, 'application/octet-stream'):
+            return 'ZPL payload does not match declared document-format'
+    elif actual in ('pdf', 'image'):
+        target = {'pdf': 'application/pdf', 'image': None}[actual]
+        if fmt in (ZPL_FORMAT, RAW_ZPL_FORMAT):
+            return 'Payload is not a ZPL label'
+        if target and fmt not in (target, 'application/octet-stream'):
+            return 'PDF payload does not match declared document-format'
+        if actual == 'image':
+            expected = ('image/png' if document.startswith(b'\x89PNG')
+                        else 'image/jpeg')
+            if fmt not in (expected, 'application/octet-stream'):
+                return 'Image payload does not match declared document-format'
+    else:
+        return 'Unsupported document data for IPP virtual printer'
+    return None
+
 PRINTERS = {
     'brother': ('Lulwa SIM Brother (2 Trays)', 'brother-tray1', 300, 'na_letter_8.5x11in'),
     'brother-tray1': ('Lulwa SIM Brother - Tray 1', 'brother-tray1', 300, 'na_letter_8.5x11in'),
@@ -104,7 +154,7 @@ def printer_attributes(key: str, uri: str):
         (KEYWORD, 'printer-state-reasons', 'none'),
         (BOOLEAN, 'printer-is-accepting-jobs', True),
         (INTEGER, 'queued-job-count', 0),
-        (MIMETYPE, 'document-format-supported', ['application/pdf', 'image/jpeg', 'image/png']),
+        (MIMETYPE, 'document-format-supported', supported_document_formats(key)),
         (MIMETYPE, 'document-format-default', 'application/pdf'),
         (KEYWORD, 'media-supported', media),
         (KEYWORD, 'media-ready', media),
@@ -164,12 +214,10 @@ def create_handler(output: str | Path):
                            'detail': str(detail)[:180] if detail else None})
 
     def render_into_job(job, document: bytes, key: str, fmt: str | None, request):
-        if fmt not in ('application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream'):
+        error = verify_document_format(key, fmt, document)
+        if error:
             job['state'] = 8
-            return 0x040A, 'Unsupported document-format: ' + str(fmt)
-        if not document:
-            job['state'] = 8
-            return 0x0400, 'Missing document payload'
+            return (0x0400 if not document else 0x040A), error
         profile = PRINTERS[key][1]
         if key == 'brother' and request.first('media-source', 'tray-1') == 'tray-2':
             profile = 'brother-tray2'
@@ -252,7 +300,7 @@ def create_handler(output: str | Path):
             elif op == 0x0004:
                 # Validate-Job: check format without claiming a print occurred.
                 fmt = request.first('document-format', 'application/pdf')
-                if fmt not in ('application/pdf', 'image/jpeg', 'image/png', 'application/octet-stream'):
+                if not format_supported(key, fmt):
                     status = 0x040A
             elif op == 0x0005:
                 # Create-Job: client reserves a job ID; document arrives via Send-Document.

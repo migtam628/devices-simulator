@@ -35,7 +35,7 @@ Software teams building commerce, shipping, POS and internal operations systems 
 | Capability | Current support | Detail |
 |---|---|---|
 | Office printer simulation | **In-app + experimental OS queues** | Brother-style profiles, Letter media, two-tray settings |
-| 4 × 6 thermal label simulation | **In-app + experimental OS queues** | Zebra-style label captures and partial ZPL II |
+| 4 × 6 thermal label simulation | **In-app + experimental OS queues** | Zebra-style labels, partial ZPL II and direct raw ZPL IPP capture |
 | Local document capture | **Available** | PDF, JPG, PNG and supported ZPL to JPG files |
 | Receipt printer fixture | **Available (in-app)** | Partial ESC/POS 80mm sample/raster to local JPG; not an OS receipt printer |
 | Printer fault testing | **Available** | Normal, offline, paper-out, jam and paused |
@@ -206,6 +206,12 @@ The API accepts only recognized capture profile directories, rejects symlinks an
 The **Receipt Printer** is now a working **in-app capture fixture**, not just a saved profile. Create a receipt device, open its Detail page, choose **Generate Sample** or import a bounded `.escpos`/`.bin` fixture starting with `ESC @`, and inspect the persisted JPG and source bytes in Jobs and Gallery.
 
 The receipt renderer supports `ESC @` reset, `ESC a` alignment, `ESC E` emphasis, `ESC !` and `GS !` character scaling, `GS v 0` bounded 1-bit raster images, LF/CR/HT, and `GS V` cut boundaries. Unrecognized control sequences, invalid raster dimensions, overly long receipts, and unsupported formats fail explicitly. These bytes are rendered *locally*: no Windows receipt driver, printer USB/BLE transport, network listener, cash-drawer pulse, or paper cutter is emulated. See [ESC/POS receipt guide](docs/ESC_POS_RECEIPTS.md).
+
+## v0.15.1 — Raw Zebra ZPL via local IPP
+
+The experimental **Zebra IPP endpoint** (`ipp://127.0.0.1:8631/ipp/zebra`) can now accept ZPL `Print-Job` and `Create-Job` + `Send-Document` requests, persist `original.zpl`, and render `page-001.jpg` through the same bounded ZPL preview engine. The documented vendor MIME type is `application/vnd.zebra-zpl`. The server also accepts `application/octet-stream` auto-detection for ZPL and `application/vnd.cups-raw` as a compatibility input, but only on Zebra. The Brother endpoint rejects ZPL explicitly instead of silently accepting label data.
+
+Declared MIME types are checked against actual job bytes, and unsupported format or printer combinations return IPP errors. A successful request only means the local IPP capture produced a JPG; this **does not establish PrintNode Client discovery, actual Windows/macOS spooler conversion, printer hardware, or IPP Everywhere certification**. See [raw ZPL and IPP test guide](docs/IPP_RAW_ZPL.md).
 
 ## Who it's for
 
