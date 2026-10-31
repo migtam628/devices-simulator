@@ -213,6 +213,12 @@ The experimental **Zebra IPP endpoint** (`ipp://127.0.0.1:8631/ipp/zebra`) can n
 
 Declared MIME types are checked against actual job bytes, and unsupported format or printer combinations return IPP errors. A successful request only means the local IPP capture produced a JPG; this **does not establish PrintNode Client discovery, actual Windows/macOS spooler conversion, printer hardware, or IPP Everywhere certification**. See [raw ZPL and IPP test guide](docs/IPP_RAW_ZPL.md).
 
+## v0.15.2 — Manually activated local RAW ZPL TCP (port 9100)
+
+**System Integration → Local RAW ZPL TCP port** adds a manually activated **loopback-only** listener on `127.0.0.1:9100`. The service is **off by default** and does not auto-start at login. Local applications can send a bounded `^XA … ^XZ` label over a TCP connection; the simulator persists `original.zpl`, job.json and a 203dpi JPG under the Zebra profile. Up to 10 complete labels per connection are supported, and unsupported ZPL commands or oversized/partial input are rejected with a concise local status. The interface provides **Start/Stop**, accepted/rejected counters, and error codes. Closing the Hub closes the raw listener.
+
+This option is useful for a controlled local shipping/label QA integration without OS queue configuration. Because the traditional RAW TCP printing protocol has **no TCP-level authentication**, the listener is *never* exposed to LAN or public interfaces. It must be manually enabled on each launch and should only receive test data. **PrintNode Client discovery, native Windows/macOS printer enumeration, and physical Zebra printing are not verified.** [Raw TCP setup and safety guide](docs/RAW_ZPL_TCP.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

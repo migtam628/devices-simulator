@@ -31,6 +31,7 @@ from .os_print_test import print_readiness, verify_print_roundtrip
 from .device_catalog import public_catalog, select_model
 from .studio_engine import StudioManager
 from .connection_engine import ConnectionEngine
+from .raw_zpl import RawZPLListener
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 35 * 1024 * 1024
@@ -298,7 +299,7 @@ class HubStore:
         return None
 
 
-def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: MacScaleHID, studio: StudioManager, connections: ConnectionEngine):
+def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: MacScaleHID, studio: StudioManager, connections: ConnectionEngine, raw_zpl: RawZPLListener | None = None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "DevicesHub/0.3"
         protocol_version = "HTTP/1.1"
@@ -342,6 +343,7 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                     "scale_hid": scale_hid.state(),
                     "presets": PRESETS, "catalog": public_catalog(),
                     "studio": studio.snapshot(), "connections": connections.snapshot(),
+                    "raw_zpl": raw_zpl.status() if raw_zpl else {"running": False},
                     "platform": platform.system(), "output_dir": str(store.output_dir),
                     "service": "local", "os_install_supported": platform.system() in ("Darwin", "Linux", "Windows"),
                 })
@@ -396,6 +398,13 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                             store.output_dir, payload.get("days"),
                             payload.get("fingerprint"), confirm=payload.get("confirm"))
                     return self.send(200, {"cleanup": result})
+                if path in ("/api/system/raw-zpl/start", "/api/system/raw-zpl/stop"):
+                    if payload.get("confirm") is not True:
+                        return self.send(400, {"error": "Explicit local TCP listener confirmation required"})
+                    if raw_zpl is None:
+                        raise RuntimeError("Raw ZPL listener is not initialized")
+                    current = (raw_zpl.start() if path.endswith("/start") else raw_zpl.stop())
+                    return self.send(200, {"raw_zpl": current})
                 if path == "/api/system/print-readiness":
                     return self.send(200, {"readiness": print_readiness(
                         str(payload.get("preset", "")), store.output_dir)})
@@ -573,7 +582,10 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     scale_hid = MacScaleHID()
     connections = ConnectionEngine(store)
     studio = StudioManager(Path(state_dir), store, connections=connections)
-    server = ThreadingHTTPServer((host, port), make_handler(store, token, hid, scale_hid, studio, connections))
+    raw_zpl = RawZPLListener(store.output_dir)
+    server = ThreadingHTTPServer((host, port), make_handler(
+        store, token, hid, scale_hid, studio, connections, raw_zpl))
+    server.hub_raw_zpl = raw_zpl
     server.hub_connections = connections
     server.hub_studio = studio
     server.hub_hid = hid
@@ -584,6 +596,7 @@ def create_server(host="127.0.0.1", port=8765, state_dir=None, output_dir=None):
     def close_all_services():
         # Ensure no TCP listener remains after HTTP server shutdown, including
         # in tests or third-party embedding that only calls server_close().
+        raw_zpl.stop()
         connections.stop_all()
         base_close()
     server.server_close = close_all_services

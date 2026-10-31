@@ -227,12 +227,24 @@ function osReadinessPanel(id){
     '<span class="small"><b>'+clean(c.key)+'</b>: '+clean(c.detail)+
     (c.next_step?'<br>'+clean(c.next_step):"")+'</span></div>').join("")+'</div>';
 }
+function rawZplTcpPanel(){
+ const s=state.raw_zpl||{};
+ return '<div class="card mt"><div class="cardhead"><div><h2>Local RAW ZPL TCP port</h2>'+
+ '<p class="small">Optional direct TCP input to the simulator, not an installed OS or PrintNode printer.</p></div>'+
+ badge(s.running?"Listening":"Off",s.running?"green":"amber")+'</div>'+
+ '<p class="small">127.0.0.1:'+(s.port||9100)+' · manual activation only · up to 10 ZPL labels per connection · 1 MiB per label.</p>'+
+ '<div class="row wrap mt">'+(s.running?button("Stop ZPL TCP listener","raw-zpl-stop","danger"):
+ button("Start local ZPL TCP","raw-zpl-start","primary"))+'</div>'+
+ '<p class="small mt">Rendered: '+clean(s.accepted_labels||0)+' · Rejected: '+
+ clean(s.rejected_connections_or_labels||0)+(s.last_error?' · Last error: '+clean(s.last_error):'')+
+ '</p><p class="small">Use test data only. Socket access is restricted to this computer; no external devices or shipment actions.</p></div>';
+}
 function integration(){return heading("SYSTEM INTEGRATION","OS Printer & Scanner Setup","Install real operating-system printer queues and verify registration.",button("Refresh status","refresh"))+
 '<div class="notice warn"><b>Printer installation is experimental</b>The hub can register Brother and Zebra queues, but OS print-dialog jobs must still be tested on this machine. Flatbed scanning still needs eSCL/AirScan; macOS virtual barcode HID is a separate temporary keyboard.</div>'+
 '<div class="grid two mt">'+["brother","zebra"].map(id=>'<div class="card"><div class="cardhead"><h2>'+clean(preset(id).label)+'</h2>'+regBadge(id)+'</div><p class="small">'+clean(registration(id).queue)+'</p>'+installControls(id)+button("Check print path","os-readiness:"+id)+
  osReadinessPanel(id)+button("Verify OS Print → JPG","os-test:"+id,"",
  registration(id).status!=="registered"||osReadiness[id]?.status!=="ready")+'</div>').join("")+'</div>'+
-'<div class="card mt"><h2>Virtual Barcode Input Simulator</h2>'+hidControls()+'</div><div class="grid three mt">'+[['Local hub','Running','Local API'],['IPP endpoint',state.ipp_service_ready?"Running":"Offline",'127.0.0.1:8631'],['OS verification','Available','Queue enumeration and endpoint match']].map(([a,b,c])=>'<div class="card"><h2>'+a+'</h2>'+badge(b,b==="Running"||b==="Available"?"green":"amber")+'<p class="muted mt">'+c+'</p></div>').join("")+'</div>'+
+rawZplTcpPanel()+'<div class="card mt"><h2>Virtual Barcode Input Simulator</h2>'+hidControls()+'</div><div class="grid three mt">'+[['Local hub','Running','Local API'],['IPP endpoint',state.ipp_service_ready?"Running":"Offline",'127.0.0.1:8631'],['OS verification','Available','Queue enumeration and endpoint match']].map(([a,b,c])=>'<div class="card"><h2>'+a+'</h2>'+badge(b,b==="Running"||b==="Available"?"green":"amber")+'<p class="muted mt">'+c+'</p></div>').join("")+'</div>'+
 '<div class="card mt"><h2>Further work</h2>'+['Print one test page from the OS dialog and verify JPG capture','Brother tray selection and Zebra label media roundtrip','Advanced ZPL and Windows compatibility','Scanner eSCL / WIA support (separate device transport)','PrintNode integration'].map(x=>'<div class="item"><span class="pill amber">Test / Pending</span>'+x+'</div>').join("")+'</div>'}
 function studio(){return studioPage();}
 function retentionPanel(){
@@ -313,6 +325,17 @@ if(k.startsWith("save-settings:")){
   try{await post("/api/devices/"+id+"/settings",{fault:E("device-fault")?.value,tray:E("device-tray")?.value||"tray-1"});
     await refresh();showToast("Simulated device settings saved")}
   catch(error){showToast(error.message,true)}return;
+}
+if(k==="raw-zpl-start"||k==="raw-zpl-stop"){
+ const starting=k==="raw-zpl-start";
+ if(!confirm((starting?"Start":"Stop")+" a direct raw ZPL TCP listener on 127.0.0.1:9100? "+
+ "It has no TCP-level authentication, accepts only local connections, and saves any test ZPL to the local JPG gallery."))return;
+ try{
+   await post("/api/system/raw-zpl/"+(starting?"start":"stop"),{confirm:true});
+   await refresh();
+   showToast(starting?"Local RAW ZPL listener started":"Local RAW ZPL listener stopped");
+ }catch(error){showToast(error.message,true)}
+ return;
 }
 if(k.startsWith("os-readiness:")){
  const id=k.slice("os-readiness:".length);
