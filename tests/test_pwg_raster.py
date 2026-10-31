@@ -160,14 +160,17 @@ def server(tmp_path):
 
 def ipp_request(port, printer, op, data=b"", fmt=None):
     uri=f"ipp://127.0.0.1:{port}/ipp/{printer}"
-    with http.client.HTTPConnection("127.0.0.1", port, timeout=10) as connection:
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
         connection.request("POST", f"/ipp/{printer}",
                            ipp_packet(op, uri, data, fmt),
                            {"Content-Type": "application/ipp"})
-        reply=connection.getresponse()
-        raw=reply.read()
-        assert reply.status==200
+        reply = connection.getresponse()
+        raw = reply.read()
+        assert reply.status == 200
         return raw, parse_request(raw)
+    finally:
+        connection.close()
 
 
 @pytest.mark.parametrize("queue", ["zebra", "brother"])
