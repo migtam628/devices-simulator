@@ -65,7 +65,7 @@ def verify_document_format(key: str, fmt: str | None, document: bytes) -> str | 
         if target and fmt not in (target, 'application/octet-stream'):
             return 'PDF payload does not match declared document-format'
         if actual == 'image':
-            expected = ('image/png' if document.startswith(b'\\x89PNG')
+            expected = ('image/png' if document.startswith(b'\x89PNG')
                         else 'image/jpeg')
             if fmt not in (expected, 'application/octet-stream'):
                 return 'Image payload does not match declared document-format'
