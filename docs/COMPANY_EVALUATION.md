@@ -15,7 +15,7 @@
 
 ## Capability boundaries
 
-**Implemented locally:** Device profiles; JPG capture from PDF/PNG/JPG and a limited ZPL subset; output gallery; fault simulation; two-device Shipping Station demo; flatbed scanner *fixture*.
+**Implemented locally:** Device profiles; JPG capture from PDF/PNG/JPG, limited ZPL, and local ESC/POS receipt previews; output gallery; fault simulation; two-device Shipping Station demo; flatbed scanner *fixture*.
 
 **Experimental:** Native local IPP print-queue registration; macOS/Linux CUPS-to-JPG verification; macOS Quartz barcode keyboard simulation (Accessibility permission). These features need validation on each supported host and with each upstream application.
 
