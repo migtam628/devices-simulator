@@ -37,7 +37,7 @@ No simulation result is proof of physical printing or fulfillment. Manufacturer-
 
 - Printed content and generated JPGs stay in local files by default. Sensitive customer information may be present in both source files and metadata.
 - The simulator IPP server is intended for **loopback use**, not internet-exposed deployment.
-- Test output directories need appropriate filesystem permissions, local retention procedures and cleanup rules.
+- Test output directories need appropriate filesystem permissions; optional preview-first capture retention controls are available in Settings. Review deletions carefully.
 - Never use scanned or simulated output to auto-mark real ecommerce orders shipped, printed, paid, or fulfilled.
 - A true hardware lab and security review are still required before a production rollout.
 - Development builds are unsigned; your endpoint-security policies may block them.

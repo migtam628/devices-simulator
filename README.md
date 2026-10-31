@@ -194,6 +194,12 @@ The Zebra-style JPG preview now renders `^GFA` inline image fields (raw ASCII he
 
 This improves testing with real-world shipping-label fixtures but is **not** full ZPL firmware, barcode scannability certification or physical printer support. Review [ZPL graphics and QR guide](docs/ZPL_GRAPHICS.md).
 
+## v0.14.3 — Opt-in local capture retention
+
+**Settings → Capture retention** provides a dry-run of old PDF/JPG print capture folders, then an explicitly confirmed deletion of a reviewed batch. Choose 30, 90, 180, or 365 days, inspect how many captured jobs and bytes are eligible, and approve deletion only if needed. No background cleanup, default deletion, scheduled removal or OS printer changes are introduced.
+
+The API accepts only recognized capture profile directories, rejects symlinks and invalid metadata, and requires both a local access token and the exact fingerprint returned by the preview. If files change between preview and deletion, it stops safely. Cleanup is limited to 100 old jobs per action. **Deletion is permanent:** source documents, JPGs and job.json are removed together; Studio run-history references may remain. See [Capture retention](docs/CAPTURE_RETENTION.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
