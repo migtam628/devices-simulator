@@ -13,6 +13,8 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .engine import PROFILES
+
 MAX_RETENTION_DAYS = 3650
 MAX_CLEANUP_BATCH = 100
 
@@ -29,7 +31,7 @@ def _snapshot(root: Path, days: int, now: datetime):
     cutoff = now - timedelta(days=days)
     found = []
     for profile in root.iterdir():
-        if profile.is_symlink() or not profile.is_dir():
+        if profile.name not in PROFILES or profile.is_symlink() or not profile.is_dir():
             continue
         for folder in profile.iterdir():
             if folder.is_symlink() or not folder.is_dir():

@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .engine import PROFILES, capture
+from .retention import retention_preview, retention_cleanup
 from .native_printers import get_registration, install_printer, uninstall_printer, service_ready, PORT
 from .hid_barcode import MacBarcodeHID
 from .mac_scale_hid import MacScaleHID
@@ -377,6 +378,15 @@ def make_handler(store: HubStore, token: str, hid: MacBarcodeHID, scale_hid: Mac
                 path = urlparse(self.path).path
                 if path == "/api/devices":
                     return self.send(201, {"device": store.create_device(payload)})
+                if path == "/api/system/retention/preview":
+                    return self.send(200, {"preview": retention_preview(
+                        store.output_dir, payload.get("days"))})
+                if path == "/api/system/retention/cleanup":
+                    with store.lock:
+                        result = retention_cleanup(
+                            store.output_dir, payload.get("days"),
+                            payload.get("fingerprint"), confirm=payload.get("confirm"))
+                    return self.send(200, {"cleanup": result})
                 if path == "/api/system/print-readiness":
                     return self.send(200, {"readiness": print_readiness(
                         str(payload.get("preset", "")), store.output_dir)})

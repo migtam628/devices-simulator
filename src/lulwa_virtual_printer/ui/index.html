@@ -86,6 +86,7 @@ const TOKEN="__HUB_TOKEN__",E=id=>document.getElementById(id);
 const icons={home:"⌂",devices:"▤",wizard:"⊕",jobs:"▧",gallery:"▥",diagnostics:"◉",integration:"⌘",studio:"◇",connections:"⊞",settings:"⚙",brother:"▣",zebra:"▤",scanner:"▱",barcode:"▥",receipt:"▦",serial:"⌁",scale:"⚖",network_device:"⌘",usb_device:"⊡",ble_device:"ᛒ",rfid:"◈",sensor:"◉"};
 const nav=[["home","Home"],["devices","My Devices"],["wizard","Create Device"],["jobs","Jobs & Queue"],["gallery","Output Gallery"],["diagnostics","Diagnostics"],["integration","System Integration"],["studio","Advanced Studio"],["connections","Connections"],["settings","Settings"]];
 let osReadiness={};
+let retentionDays=90,retentionState=null;
 let state={devices:[],jobs:[],presets:{},platform:"Unknown",output_dir:""},route="home",active="",draft={step:0,preset:"brother",name:"Brother Office Printer",tray:"tray-1",model_id:"generic-office",brand:"Generic",transport:"ipp",saved:""},detailEdit=null;
 const clean=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const preset=id=>state.presets[id]||{};
@@ -234,7 +235,24 @@ function integration(){return heading("SYSTEM INTEGRATION","OS Printer & Scanner
 '<div class="card mt"><h2>Virtual Barcode Input Simulator</h2>'+hidControls()+'</div><div class="grid three mt">'+[['Local hub','Running','Local API'],['IPP endpoint',state.ipp_service_ready?"Running":"Offline",'127.0.0.1:8631'],['OS verification','Available','Queue enumeration and endpoint match']].map(([a,b,c])=>'<div class="card"><h2>'+a+'</h2>'+badge(b,b==="Running"||b==="Available"?"green":"amber")+'<p class="muted mt">'+c+'</p></div>').join("")+'</div>'+
 '<div class="card mt"><h2>Further work</h2>'+['Print one test page from the OS dialog and verify JPG capture','Brother tray selection and Zebra label media roundtrip','Advanced ZPL and Windows compatibility','Scanner eSCL / WIA support (separate device transport)','PrintNode integration'].map(x=>'<div class="item"><span class="pill amber">Test / Pending</span>'+x+'</div>').join("")+'</div>'}
 function studio(){return studioPage();}
-function settings(){return heading("HUB PREFERENCES","Settings","Local output, appearance, and privacy options.")+'<div class="grid two"><div class="card"><h2>Appearance</h2><p class="muted">Change theme without changing system preferences.</p><div class="row mt">'+button("Light","light")+button("Dark","dark")+'</div></div><div class="card"><h2>Output folder</h2><p class="small">'+clean(state.output_dir)+'</p><p class="muted">Set a different root using lulwa-hub --output PATH.</p></div><div class="card"><h2>Privacy</h2><p class="muted">Captures stay local. Customer addresses and labels may contain sensitive information.</p></div><div class="card"><h2>Scope</h2><p class="muted">Native installer, background service and scanner OS support remain planned.</p></div></div>'}
+function retentionPanel(){
+ const preview=retentionState;
+ return '<div class="card mt"><div class="cardhead"><div><h2>Capture retention</h2>'+
+ '<p class="small">Delete old local print documents and JPGs only after reviewing a dry-run. No scheduled deletion.</p></div>'+
+ badge("Manual only","amber")+'</div>'+
+ '<label class="field"><span>Keep captured jobs for at least</span><select id="retention-days">'+
+ [30,90,180,365].map(n=>'<option value="'+n+'" '+(retentionDays===n?'selected':'')+'>'+n+' days</option>').join('')+
+ '</select></label><div class="row wrap mt">'+button("Preview eligible captures","retention-preview","primary")+
+ (preview&&preview.batch_jobs?button("Delete reviewed batch","retention-cleanup","danger"): "")+'</div>'+
+ (preview?'<div class="notice warn mt"><b>Read-only preview · '+clean(preview.batch_jobs)+
+ ' jobs in next batch</b><p>'+clean(preview.eligible_jobs)+' eligible jobs · '+
+ clean((preview.batch_bytes/1024/1024).toFixed(2))+' MiB in preview batch. '+
+ (preview.more_remaining?'Up to 100 jobs at a time; more batches remain.':'No additional batches after this one.')+
+ '</p><p class="small">Deletion removes both original print documents and generated JPGs. Existing Studio history entries may retain broken links; no undo is available.</p></div>':
+ '<p class="small mt">Preview does not read or delete print contents. Jobs with invalid metadata or symlinked paths are excluded.</p>')+
+ '</div>';
+}
+function settings(){return heading("HUB PREFERENCES","Settings","Local output, appearance, and privacy options.")+'<div class="grid two"><div class="card"><h2>Appearance</h2><p class="muted">Change theme without changing system preferences.</p><div class="row mt">'+button("Light","light")+button("Dark","dark")+'</div></div><div class="card"><h2>Output folder</h2><p class="small">'+clean(state.output_dir)+'</p><p class="muted">Set a different root using lulwa-hub --output PATH.</p></div><div class="card"><h2>Privacy</h2><p class="muted">Captures stay local. Customer addresses and labels may contain sensitive information.</p></div><div class="card"><h2>Scope</h2><p class="muted">Native installer, background service and scanner OS support remain planned.</p></div></div>'+retentionPanel()}
 function draw(){E("sidebar").innerHTML=nav.map(([k,n])=>'<button class="nav '+((route==="detail"?"devices":route)===k?"active":"")+'" data-nav="'+k+'"><i>'+icons[k]+'</i><span class="txt">'+n+'</span></button>').join("");E("breadcrumb").textContent=route==="detail"?"Device Detail":nav.find(([k])=>k===route)?.[1]||"Home";const pages={home,devices,wizard,jobs,gallery,detail,diagnostics,integration,studio,connections,settings};E("page").innerHTML=(pages[route]||home)()}
 async function test(id,file){try{showToast("Rendering sample locally…");let payload={};if(file){if(file.size>25*1024*1024)throw Error("File must be under 25 MB");if(!/\.(pdf|png|jpe?g|zpl)$/i.test(file.name))throw Error("Use PDF, PNG, JPG or ZPL");const bytes=new Uint8Array(await file.arrayBuffer());let b="";for(let i=0;i<bytes.length;i+=8192)b+=String.fromCharCode(...bytes.subarray(i,i+8192));payload={file_base64:btoa(b),title:file.name.slice(0,80)}}const result=await post("/api/devices/"+id+"/test",payload);await refresh();showToast(result.job.status==="rendered"?"Saved "+result.job.images.length+" JPG page(s) · local capture":"Simulated printer error: "+result.job.error,result.job.status!=="rendered");goto(result.job.status==="rendered"?"gallery":"jobs")}catch(e){showToast(e.message,true)}}
 async function save(){try{draft.name=(E("device-name")?.value??draft.name).trim();draft.tray=E("tray")?.value||draft.tray;if(!draft.name)throw Error("Device name is required");if(draft.saved){goto("detail",draft.saved);return}const result=await post("/api/devices",{preset:draft.preset,name:draft.name,tray:draft.tray,model_id:draft.model_id,transport:draft.transport});draft.saved=result.device.id;await refresh();showToast("Profile saved · no OS queue installed");if(draft.step<5){draft.step=5;draw()}else goto("detail",draft.saved)}catch(e){showToast(e.message,true)}}
@@ -245,7 +263,24 @@ const a=event.target.closest("[data-action]");if(!a)return;const k=a.dataset.act
 if(k==="wizard")return begin();if(nav.some(([id])=>id===k))return goto(k);
 if(k==="next"){if(draft.step===1){if(!catalogModel(draft.model_id)){showToast("Choose a valid model",true);return}}if(draft.step===2){draft.name=E("device-name")?.value.trim()||"";draft.tray=E("tray")?.value||draft.tray;if(!draft.name){showToast("Device name required",true);return}}draft.step=Math.min(5,draft.step+1);return draw()}
 if(k==="back"){draft.step=Math.max(0,draft.step-1);return draw()}
-if(k==="save")return save();if(k==="refresh")return refresh().then(()=>showToast("Hub refreshed"));
+if(k==="save")return save();if(k==="retention-preview"){
+ const chosen=Number(E("retention-days")?.value||retentionDays);
+ try{const report=await post("/api/system/retention/preview",{days:chosen});
+   retentionDays=chosen;retentionState=report.preview;draw();
+   showToast(retentionState.batch_jobs+" eligible local capture(s); nothing deleted")}
+ catch(error){showToast(error.message,true)}return;
+}
+if(k==="retention-cleanup"){
+ if(!retentionState)return showToast("Preview captures first",true);
+ if(!confirm("Permanently delete "+retentionState.batch_jobs+
+   " older captured job folders (including originals and JPGs)? This cannot be undone."))return;
+ try{const out=await post("/api/system/retention/cleanup",{
+   days:retentionState.days,fingerprint:retentionState.fingerprint,confirm:true});
+   retentionState=null;await refresh();
+   showToast("Deleted "+out.cleanup.deleted_jobs+" reviewed local capture job(s)")}
+ catch(error){retentionState=null;draw();showToast(error.message,true)}return;
+}
+if(k==="refresh")return refresh().then(()=>showToast("Hub refreshed"));
 if(k==="hid-start"||k==="hid-stop"||k==="hid-scan"){
   if(k==="hid-start"&&!confirm("Enable barcode keyboard simulation? It types into the focused app and requires macOS Accessibility permission."))return;
   if(k==="hid-scan"&&!confirm("Send barcode to the focused application after 3 seconds?"))return;
