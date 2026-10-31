@@ -188,6 +188,12 @@ A successful PrintDocument submission is **not counted as printing success** unt
 
 **Verified in automated tests:** Print Spooler status classification, endpoint restrictions, approval gates, safe sample script generation, missing-JPG detection, and Windows PowerShell syntax. **Not yet verified:** a live Windows desktop's IPP queue actually delivers raster/PDF output that the simulator can render. This is a device-side capability test, not Windows IPP certification. See [Windows printing troubleshooting](docs/OS_PRINT_DIAGNOSTICS.md).
 
+## v0.14.2 — Shipping-label graphics and QR previews
+
+The Zebra-style JPG preview now renders `^GFA` inline image fields (raw ASCII hex, Zebra ACS row compression, Base64 and zlib-compressed Z64) and `^BQN` QR model 2, plus `^FH` printable-ASCII field escapes. Bitmap decoding checks declared bytes-per-row, total size, Z64 CRC-16, a bounded decompression limit, and output placement. Unsupported inputs continue to fail explicitly instead of producing misleading labels.
+
+This improves testing with real-world shipping-label fixtures but is **not** full ZPL firmware, barcode scannability certification or physical printer support. Review [ZPL graphics and QR guide](docs/ZPL_GRAPHICS.md).
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.
