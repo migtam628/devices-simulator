@@ -19,8 +19,8 @@ def test_code128_renders_real_bars():
 
 
 def test_unsupported_commands_are_not_falsely_rendered():
-    with pytest.raises(ValueError, match="not supported"):
-        render_zpl(b"^XA^FO20,20^BQN,2,8^FDXYZ^FS^XZ")
+    with pytest.raises(ValueError, match="model 2"):
+        render_zpl(b"^XA^FO20,20^BQN,1,8^FDXYZ^FS^XZ")
 
 
 def test_barcode_overflow_rejected():
