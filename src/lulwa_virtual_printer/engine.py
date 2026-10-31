@@ -23,6 +23,8 @@ def safe_name(text: str) -> str:
 
 
 def detect_format(data: bytes) -> str:
+    if data.startswith(b"RaS2"):
+        return "pwg-raster"
     if data.startswith(b"%PDF-"):
         return "pdf"
     if data.startswith(b"%!"):
@@ -33,7 +35,7 @@ def detect_format(data: bytes) -> str:
         return "escpos"
     if data[:4] == b"\x89PNG" or data.startswith(b"\xff\xd8\xff"):
         return "image"
-    raise ValueError("Unsupported job data. Supply PDF, PostScript, JPG, PNG, or ZPL.")
+    raise ValueError("Unsupported job data. Supply PDF, PostScript, JPG, PNG, PWG Raster, ZPL or ESC/POS.")
 
 
 def render_pdf(data: bytes, dpi: int) -> list[Image.Image]:
@@ -50,6 +52,9 @@ def render_pdf(data: bytes, dpi: int) -> list[Image.Image]:
 
 def render_job(data: bytes, dpi: int, fmt: str | None = None) -> list[Image.Image]:
     fmt = fmt or detect_format(data)
+    if fmt == "pwg-raster":
+        from .pwg_raster import decode_pwg_raster
+        return decode_pwg_raster(data)
     if fmt == "pdf":
         return render_pdf(data, dpi)
     if fmt == "image":
@@ -78,7 +83,7 @@ def capture(data: bytes, profile: str, output: str | Path, title: str = "print",
     job_id = f"{timestamp}-{uuid.uuid4().hex[:8]}"
     directory = output / profile / f"{safe_name(title)}-{job_id}"
     directory.mkdir(parents=True, exist_ok=False)
-    ext = {"pdf": ".pdf", "postscript": ".ps", "zpl": ".zpl", "escpos": ".bin", "image": ".img"}[format_name]
+    ext = {"pdf": ".pdf", "postscript": ".ps", "zpl": ".zpl", "escpos": ".bin", "pwg-raster": ".pwg", "image": ".img"}[format_name]
     original = directory / f"original{ext}"
     original.write_bytes(data)
     images = []

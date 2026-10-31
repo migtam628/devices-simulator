@@ -23,14 +23,14 @@ from .ipp import (
 
 LOGGER = logging.getLogger(__name__)
 MAX_IPP_SIZE = 25 * 1024 * 1024 + 128 * 1024
-STANDARD_FORMATS = frozenset(('application/pdf', 'image/jpeg', 'image/png'))
+STANDARD_FORMATS = frozenset(('application/pdf', 'image/jpeg', 'image/png', 'image/pwg-raster'))
 ZPL_FORMAT = 'application/vnd.zebra-zpl'
 RAW_ZPL_FORMAT = 'application/vnd.cups-raw'
 
 
 def supported_document_formats(key: str) -> list[str]:
     """Advertise only the formats the *selected* virtual printer can render."""
-    formats = ['application/pdf', 'image/jpeg', 'image/png']
+    formats = ['application/pdf', 'image/jpeg', 'image/png', 'image/pwg-raster']
     if key == 'zebra':
         # Vendor ZPL is experimental; not IPP Everywhere raster compliance.
         formats.append(ZPL_FORMAT)
@@ -58,10 +58,13 @@ def verify_document_format(key: str, fmt: str | None, document: bytes) -> str | 
             return 'ZPL is supported only on the simulated Zebra queue'
         if fmt not in (ZPL_FORMAT, RAW_ZPL_FORMAT, 'application/octet-stream'):
             return 'ZPL payload does not match declared document-format'
+    elif actual == 'pwg-raster':
+        if fmt not in ('image/pwg-raster', 'application/octet-stream'):
+            return 'PWG Raster payload does not match declared document-format'
     elif actual in ('pdf', 'image'):
         target = {'pdf': 'application/pdf', 'image': None}[actual]
-        if fmt in (ZPL_FORMAT, RAW_ZPL_FORMAT):
-            return 'Payload is not a ZPL label'
+        if fmt in (ZPL_FORMAT, RAW_ZPL_FORMAT, 'image/pwg-raster'):
+            return 'Payload does not match declared document-format'
         if target and fmt not in (target, 'application/octet-stream'):
             return 'PDF payload does not match declared document-format'
         if actual == 'image':
@@ -156,6 +159,7 @@ def printer_attributes(key: str, uri: str):
         (INTEGER, 'queued-job-count', 0),
         (MIMETYPE, 'document-format-supported', supported_document_formats(key)),
         (MIMETYPE, 'document-format-default', 'application/pdf'),
+        (KEYWORD, 'pwg-raster-document-type-supported', ['sgray_8', 'srgb_8']),
         (KEYWORD, 'media-supported', media),
         (KEYWORD, 'media-ready', media),
         (KEYWORD, 'media-default', media),
