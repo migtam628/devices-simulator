@@ -14,6 +14,7 @@ PROFILES = {
     "brother-tray2": {"printer": "Brother", "tray": "Tray 2", "dpi": 300},
     "zebra": {"printer": "Zebra", "tray": "4x6 roll", "dpi": 203},
     "scanner": {"printer": "Scanner Fixture", "tray": "flatbed preview", "dpi": 300},
+    "receipt": {"printer": "Generic Receipt Fixture", "tray": "80mm roll", "dpi": 203},
 }
 
 
@@ -28,6 +29,8 @@ def detect_format(data: bytes) -> str:
         return "postscript"
     if data.lstrip().startswith(b"^XA"):
         return "zpl"
+    if data.startswith(b"\x1b@"):
+        return "escpos"
     if data[:4] == b"\x89PNG" or data.startswith(b"\xff\xd8\xff"):
         return "image"
     raise ValueError("Unsupported job data. Supply PDF, PostScript, JPG, PNG, or ZPL.")
@@ -57,6 +60,9 @@ def render_job(data: bytes, dpi: int, fmt: str | None = None) -> list[Image.Imag
     if fmt == "zpl":
         from .zpl_renderer import render_zpl
         return [render_zpl(data, dpi)]
+    if fmt == "escpos":
+        from .escpos_renderer import render_escpos
+        return [render_escpos(data, dpi)]
     raise ValueError(f"Unsupported format: {fmt}")
 
 
@@ -72,7 +78,7 @@ def capture(data: bytes, profile: str, output: str | Path, title: str = "print",
     job_id = f"{timestamp}-{uuid.uuid4().hex[:8]}"
     directory = output / profile / f"{safe_name(title)}-{job_id}"
     directory.mkdir(parents=True, exist_ok=False)
-    ext = {"pdf": ".pdf", "postscript": ".ps", "zpl": ".zpl", "image": ".img"}[format_name]
+    ext = {"pdf": ".pdf", "postscript": ".ps", "zpl": ".zpl", "escpos": ".bin", "image": ".img"}[format_name]
     original = directory / f"original{ext}"
     original.write_bytes(data)
     images = []
