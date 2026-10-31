@@ -64,3 +64,17 @@ Invoke-RestMethod http://127.0.0.1:8631/diagnostics
 If the queue's actual URL cannot be proven, do not print until an exact local endpoint is verified. The tested queues are experimental and **not physical Brother/Zebra drivers**; no remote or physical printer should receive a sample.
 
 **Current evidence:** Code-level and syntax tests for Windows; genuine Ubuntu CUPS → IPP → JPG smoke tests for both printer profiles. No successful physical Windows IPP print-to-JPG roundtrip has been independently observed yet.
+
+## PWG Raster IPP preview (v0.16.0)
+
+The experimental IPP server now advertises `image/pwg-raster` with
+`sgray_8` and `srgb_8` (8-bit grayscale or 24-bit sRGB).
+A client delivering compatible `RaS2` pages over Print-Job or Send-Document
+is decoded to one or more JPGs. The stream is preserved as `original.pwg`
+beside `job.json`; unsupported CUPS/IPP raster variants return an error.
+
+This handles **incoming document bytes**, not driver installation or
+USB printer emulation. Linux CUPS end-to-end tests verify real queue
+submission separately. On Windows/macOS, use **Verify OS Print → JPG** on
+the machine and record the observed `document_format` in diagnostics.
+Only completed JPGs establish actual capture.
