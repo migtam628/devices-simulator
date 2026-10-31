@@ -6,6 +6,7 @@ a listener without explicit API activation and does not auto-start.
 """
 from __future__ import annotations
 
+import os
 import socket
 import socketserver
 import threading
@@ -64,9 +65,17 @@ class RawZPLListener:
             owner = self
 
             class Server(socketserver.ThreadingTCPServer):
-                allow_reuse_address = True
+                # Windows SO_REUSEADDR can let another process hijack the
+                # exact same port. Request exclusive socket ownership.
+                allow_reuse_address = os.name != "nt"
                 daemon_threads = True
                 request_queue_size = 5
+
+                def server_bind(self):
+                    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                        self.socket.setsockopt(
+                            socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                    return super().server_bind()
 
             class Handler(socketserver.BaseRequestHandler):
                 def handle(self):
