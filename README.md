@@ -37,6 +37,7 @@ Software teams building commerce, shipping, POS and internal operations systems 
 | Office printer simulation | **In-app + experimental OS queues** | Brother-style profiles, Letter media, two-tray settings |
 | 4 × 6 thermal label simulation | **In-app + experimental OS queues** | Zebra-style label captures and partial ZPL II |
 | Local document capture | **Available** | PDF, JPG, PNG and supported ZPL to JPG files |
+| Receipt printer fixture | **Available (in-app)** | Partial ESC/POS 80mm sample/raster to local JPG; not an OS receipt printer |
 | Printer fault testing | **Available** | Normal, offline, paper-out, jam and paused |
 | Jobs, Gallery and Diagnostics | **Available** | Source documents, output files, metadata and trace information |
 | CUPS end-to-end verification | **Experimental — macOS/Linux** | Confirm OS spooler → local IPP → JPG, not just a queued job |
@@ -199,6 +200,12 @@ This improves testing with real-world shipping-label fixtures but is **not** ful
 **Settings → Capture retention** provides a dry-run of old PDF/JPG print capture folders, then an explicitly confirmed deletion of a reviewed batch. Choose 30, 90, 180, or 365 days, inspect how many captured jobs and bytes are eligible, and approve deletion only if needed. No background cleanup, default deletion, scheduled removal or OS printer changes are introduced.
 
 The API accepts only recognized capture profile directories, rejects symlinks and invalid metadata, and requires both a local access token and the exact fingerprint returned by the preview. If files change between preview and deletion, it stops safely. Cleanup is limited to 100 old jobs per action. **Deletion is permanent:** source documents, JPGs and job.json are removed together; Studio run-history references may remain. See [Capture retention](docs/CAPTURE_RETENTION.md).
+
+## v0.15.0 — Functional ESC/POS 80mm receipt previews
+
+The **Receipt Printer** is now a working **in-app capture fixture**, not just a saved profile. Create a receipt device, open its Detail page, choose **Generate Sample** or import a bounded `.escpos`/`.bin` fixture starting with `ESC @`, and inspect the persisted JPG and source bytes in Jobs and Gallery.
+
+The receipt renderer supports `ESC @` reset, `ESC a` alignment, `ESC E` emphasis, `ESC !` and `GS !` character scaling, `GS v 0` bounded 1-bit raster images, LF/CR/HT, and `GS V` cut boundaries. Unrecognized control sequences, invalid raster dimensions, overly long receipts, and unsupported formats fail explicitly. These bytes are rendered *locally*: no Windows receipt driver, printer USB/BLE transport, network listener, cash-drawer pulse, or paper cutter is emulated. See [ESC/POS receipt guide](docs/ESC_POS_RECEIPTS.md).
 
 ## Who it's for
 

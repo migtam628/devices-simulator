@@ -41,7 +41,7 @@ PRESETS = {
     "zebra": {"category": "label_printer", "label": "Zebra 4×6 Thermal", "name": "Zebra 4×6 Label Printer", "dpi": 203, "media": "Label · 4 × 6 in", "profiles": ["zebra"], "capability": "experimental"},
     "scanner": {"category": "scanner", "label": "Flatbed Scanner Fixture", "name": "Virtual Flatbed Scan Preview", "dpi": 300, "media": "Letter · 8.5 × 11 in", "profiles": ["scanner"], "capability": "preview_only"},
     "barcode": {"category": "barcode", "label": "Barcode Input Simulator", "name": "Simulated Barcode Input", "dpi": None, "media": "Keyboard events · macOS", "profiles": [], "capability": "experimental"},
-    "receipt": {"category": "receipt", "label": "Receipt Printer", "name": "Virtual Receipt Printer", "dpi": 203, "media": "80 mm roll", "profiles": [], "capability": "planned"},
+    "receipt": {"category": "receipt", "label": "Receipt Printer", "name": "Virtual Receipt Printer", "dpi": 203, "media": "80 mm roll", "profiles": ["receipt"], "capability": "in_app"},
     "serial": {"category": "serial", "label": "Serial / COM Device", "name": "Virtual Serial Device", "dpi": None, "media": "PTY / COM", "profiles": [], "capability": "planned"},
     "scale": {"category": "scale", "label": "Shipping / Postal Scale", "name": "Simulated Shipping Scale", "dpi": None, "media": "Weight · kg / lb", "profiles": [], "capability": "in_app"},
     "network_device": {"category": "network_device", "label": "Network / Ethernet Device", "name": "Network Device Fixture", "dpi": None, "media": "TCP/IP endpoint profile", "profiles": [], "capability": "planned"},
@@ -238,19 +238,28 @@ class HubStore:
         if not preset["profiles"]:
             raise ValueError("This device is a profile preview. No capture backend is implemented yet")
         if document is None:
-            label = device["preset"] == "zebra"
-            width, height = (288, 432) if label else (612, 792)
-            pdf = fitz.open()
-            page = pdf.new_page(width=width, height=height)
-            page.insert_text((34, 54), "DEVICES SIMULATOR — TEST", fontsize=16)
-            page.insert_text((34, 88), device["name"], fontsize=11)
-            page.insert_text((34, 111), f"Created {timestamp()[:19]} UTC", fontsize=10)
-            page.draw_rect(fitz.Rect(34, 132, width-34, height-38), color=(0.2, 0.43, 0.68), width=1)
-            document = pdf.tobytes()
-            pdf.close()
+            if device["preset"] == "receipt":
+                document = (b"\x1b@\x1ba\x01DEVICES SIMULATOR\n"
+                            b"\x1ba\x00\x1bE\x01TEST RECEIPT\x1bE\x00\n"
+                            b"Item A             $12.00\n"
+                            b"Item B              $8.00\n"
+                            b"TOTAL              $20.00\n\n"
+                            b"\x1dV\x00")
+            else:
+                label = device["preset"] == "zebra"
+                width, height = (288, 432) if label else (612, 792)
+                pdf = fitz.open()
+                page = pdf.new_page(width=width, height=height)
+                page.insert_text((34, 54), "DEVICES SIMULATOR — TEST", fontsize=16)
+                page.insert_text((34, 88), device["name"], fontsize=11)
+                page.insert_text((34, 111), f"Created {timestamp()[:19]} UTC", fontsize=10)
+                page.draw_rect(fitz.Rect(34, 132, width-34, height-38), color=(0.2, 0.43, 0.68), width=1)
+                document = pdf.tobytes()
+                pdf.close()
         if len(document) > MAX_FILE:
             raise ValueError("File exceeds 25 MB limit")
-        profile = ("zebra" if device["preset"] == "zebra" else "scanner"
+        profile = ("receipt" if device["preset"] == "receipt" else
+                   "zebra" if device["preset"] == "zebra" else "scanner"
                    if device["preset"] == "scanner" else
                    "brother-tray2" if device["tray"] == "tray-2" else "brother-tray1")
         fault = device.get("fault", "none")
