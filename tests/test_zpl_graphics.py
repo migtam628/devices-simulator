@@ -28,7 +28,7 @@ def test_gfa_ascii_hex_raster_pixel_orientation():
 
 def test_gfa_acs_compression_row_fill_and_previous_repeat():
     # ! = F-filled row, comma = zero row, : repeats prior row
-    img = image(sample("^GFA,8,8,2,!,:,,,"))
+    img = image(sample("^GFA,8,8,2,!:,,"))
     assert img.getpixel((10,10)) == (0,0,0)
     assert img.getpixel((25,11)) == (0,0,0)
     assert img.getpixel((10,12)) == (255,255,255)

@@ -126,6 +126,8 @@ def _graphic_payload(arg: str) -> tuple[bytes, int]:
             decomp = zlib.decompressobj()
             try:
                 raw = decomp.decompress(payload, total + 1)
+                if len(raw) > total:
+                    raise ValueError("Oversized ^GFA Z64 stream")
                 raw += decomp.flush(total + 1 - len(raw))
             except zlib.error as exc:
                 raise ValueError("Invalid ^GFA Z64 stream") from exc
