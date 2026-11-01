@@ -45,6 +45,5 @@ jobs:
           python -m pip install -e '.[test]'
           sw_vers
           lpstat -r
-          lpadmin -h 127.0.0.1:631 -V 2>&1 || true
       - name: Exercise real macOS OS queues and verify JPG output
         run: python tests/cups_roundtrip_smoke.py

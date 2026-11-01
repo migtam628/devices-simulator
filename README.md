@@ -36,7 +36,7 @@ Software teams building commerce, shipping, POS and internal operations systems 
 |---|---|---|
 | Office printer simulation | **In-app + experimental OS queues** | Brother-style profiles, Letter media, two-tray settings |
 | 4 × 6 thermal label simulation | **In-app + experimental OS queues** | Zebra-style labels, partial ZPL II and direct raw ZPL IPP capture |
-| Local document capture | **Available** | PDF, JPG, PNG, PWG sGray8/sRGB8 raster and supported ZPL to JPG |
+| Local document capture | **Available** | PDF, JPG, PNG, PWG sGray1/sGray8/sRGB8 and supported ZPL to JPG |
 | Receipt printer fixture | **Available (in-app)** | Partial ESC/POS 80mm sample/raster to local JPG; not an OS receipt printer |
 | Printer fault testing | **Available** | Normal, offline, paper-out, jam and paused |
 | Jobs, Gallery and Diagnostics | **Available** | Source documents, output files, metadata and trace information |
@@ -224,6 +224,14 @@ This option is useful for a controlled local shipping/label QA integration witho
 The local IPP service now supports **`image/pwg-raster`** documents containing `RaS2` PWG Raster pages, a format used by driverless printing pipelines. It decodes compressed 8-bit sGray and 24-bit sRGB, preserves `original.pwg`, and saves one JPG per page under the selected Brother or Zebra profile. The service advertises only the supported `sgray_8` and `srgb_8` document types, and rejects other bit depths, planar/banded formats, malformed PackBits, overlarge output and unsupported colorspaces. A successful local IPP job still is **not proof of real Windows or macOS printer-driver compatibility or IPP Everywhere certification**.
 
 See [PWG Raster test and format guide](docs/PWG_RASTER.md), including the page/pixel limits and unsupported variants.
+
+## v0.16.1 — Monochrome PWG labels and real macOS CUPS verification
+
+The PWG decoder now handles **packed 1-bit sGray** in addition to 8-bit sGray and 24-bit sRGB. This matters for black-and-white labels and print pipelines that output bit-packed monochrome pages. It checks exact scanline stride (including 8-pixel row padding), compressed byte-level pixel runs, page dimensions and decoded memory before producing a JPG. The IPP service advertises `sgray_1` explicitly.
+
+The CI suite also includes a **real macOS Apple Silicon CUPS → local IPP → saved JPG roundtrip** for the Brother and Zebra queues. This is a genuine OS spooler test on a GitHub runner, though it is not yet a physical printer or PrintNode Client acceptance test. The workflow must pass before the release is published.
+
+See [PWG Raster guide](docs/PWG_RASTER.md) and [OS print diagnostics](docs/OS_PRINT_DIAGNOSTICS.md).
 
 ## Who it's for
 
