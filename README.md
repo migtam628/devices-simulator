@@ -233,6 +233,12 @@ The CI suite also includes a **real macOS Apple Silicon CUPS → local IPP → s
 
 See [PWG Raster guide](docs/PWG_RASTER.md) and [OS print diagnostics](docs/OS_PRINT_DIAGNOSTICS.md).
 
+## v0.16.2 — Application-managed macOS OS queue acceptance
+
+The macOS CI acceptance test now executes the exact **Install in OS** and **Remove from OS** functions used by the application, rather than creating test queues through a separate script. On a hosted macOS Apple Silicon runner, the test must verify its fixed simulator queue URI, print a marked page through the real CUPS spooler, find the resulting JPG, and remove only the verified queue. It records whether CUPS selected driverless IPP or the documented simulator PDF pass-through PPD fallback.
+
+This is a stronger test of the real application installation lifecycle, **not proof of physical printer or PrintNode compatibility**. The runner's `-m everywhere` PPD-generation failure remains a distinct driverless negotiation limitation.
+
 ## Who it's for
 
 **QA engineering:** Reproduce print payloads, rendering issues and device-failure scenarios in a controlled environment.

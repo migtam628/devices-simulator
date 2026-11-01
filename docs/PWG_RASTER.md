@@ -1,4 +1,4 @@
-# PWG Raster (RaS2) → JPG integration — v0.16.1
+# PWG Raster (RaS2) → JPG integration — v0.16.2
 
 Devices Simulator now accepts an explicitly constrained subset of the
 [PWG Raster Format (PWG 5102.4)](https://ftp.pwg.org/pub/pwg/candidates/cs-ippraster10-20120420-5102.4.pdf)
