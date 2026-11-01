@@ -47,7 +47,7 @@ dimensions and memory before decoding or saving JPGs.
 5. Open the local Gallery; verify a nonempty JPG and the preserved
    `original.pwg` under the selected printer profile.
 
-The automated suite `tests/test_pwg_raster.py` also checks byte-packed 1-bit pixels, including MSB-first bit polarity, 9-pixel padded rows and compressed scanline repetitions. A dedicated macOS Apple Silicon GitHub Actions job exercises a genuine CUPS OS queue → local IPP → saved JPG roundtrip alongside the Linux CUPS job. No physical hardware is involved.
+The automated suite `tests/test_pwg_raster.py` also checks byte-packed 1-bit pixels, including MSB-first bit polarity, 9-pixel padded rows and compressed scanline repetitions. A dedicated macOS Apple Silicon GitHub Actions job exercises a genuine CUPS OS queue → local IPP → saved JPG roundtrip alongside the Linux CUPS job. The macOS job first tries the driverless IPP Everywhere PPD; if its CUPS installation cannot generate one, it explicitly falls back to the repository's printer-specific PDF pass-through PPD and logs that distinction. No physical hardware is involved. **The fallback is evidence of native macOS CUPS queue printing, not of IPP Everywhere.**
 
 The automated suite `tests/test_pwg_raster.py` constructs independent
 PWG-formatted byte streams (gray, RGB, repeated rows and multi-page)

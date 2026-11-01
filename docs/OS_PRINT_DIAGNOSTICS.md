@@ -83,7 +83,10 @@ Only completed JPGs establish actual capture.
 
 GitHub Actions now executes the same **real CUPS-to-IPP-to-JPG** verification on
 `macos-15` (Apple Silicon) as on Linux. The test creates temporary simulator-only
-Brother and Zebra queues using `lpadmin -m everywhere`, sends a unique sample
+Brother and Zebra queues, attempting `lpadmin -m everywhere` first. On
+macOS only, if the OS cannot generate a driverless PPD, the test uses the
+project's documented PDF pass-through PPD with `lpadmin -P` and reports
+`bundled_PPD_fallback` in its result. It sends a unique sample
 through `lp`, and confirms matching JPG and metadata under the IPP output root.
 The test removes its temporary queues. CI results verify **macOS CUPS queue
 printing**, not physical devices, PrintNode, AirPrint discovery or other macOS

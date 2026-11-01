@@ -229,7 +229,7 @@ See [PWG Raster test and format guide](docs/PWG_RASTER.md), including the page/p
 
 The PWG decoder now handles **packed 1-bit sGray** in addition to 8-bit sGray and 24-bit sRGB. This matters for black-and-white labels and print pipelines that output bit-packed monochrome pages. It checks exact scanline stride (including 8-pixel row padding), compressed byte-level pixel runs, page dimensions and decoded memory before producing a JPG. The IPP service advertises `sgray_1` explicitly.
 
-The CI suite also includes a **real macOS Apple Silicon CUPS → local IPP → saved JPG roundtrip** for the Brother and Zebra queues. This is a genuine OS spooler test on a GitHub runner, though it is not yet a physical printer or PrintNode Client acceptance test. The workflow must pass before the release is published.
+The CI suite also includes a **real macOS Apple Silicon CUPS → local IPP → saved JPG roundtrip** for the Brother and Zebra queues, using a bundled simulator PPD fallback if driverless negotiation fails. This is a genuine OS spooler test on a GitHub runner, though it is not yet a physical printer or PrintNode Client acceptance test. The workflow must pass before the release is published.
 
 See [PWG Raster guide](docs/PWG_RASTER.md) and [OS print diagnostics](docs/OS_PRINT_DIAGNOSTICS.md).
 

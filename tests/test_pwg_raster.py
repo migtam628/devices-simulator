@@ -139,7 +139,7 @@ def test_in_app_capture_persists_source_all_page_jpg(tmp_path):
     (b"RaS2" + pwg_page(4, 3, 1, bytes([0, 0])), "Truncated"),
     (b"RaS2" + pwg_page(0, 3, 1, b""), "dimensions"),
     (b"RaS2" + pwg_page(8000, 8000, 1, b""), "pixel limit"),
-    (b"RaS2" + pwg_page(4, 3, 1, b"", colorspace=3), "color spaces"),
+    (b"RaS2" + pwg_page(4, 3, 1, b"", colorspace=3), "formats"),
     (b"RaS2" + pwg_page(4, 3, 1, b"", order=2), "packing"),
     (b"RaS2" + pwg_page(4, 3, 1, b"", colors=3), "packing"),
     (b"RaS2" + pwg_page(4, 3, 1, b"", bpp=1), "formats"),

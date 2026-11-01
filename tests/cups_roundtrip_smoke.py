@@ -6,6 +6,7 @@ No physical printers and no remote network endpoints are used.
 from __future__ import annotations
 
 import json
+import platform
 import subprocess
 import tempfile
 import threading
@@ -37,14 +38,33 @@ def main():
             for preset in ("zebra", "brother"):
                 name, _, uri = PRINTERS[preset]
                 try:
-                    checked("sudo", "lpadmin", "-p", name, "-E", "-v", uri, "-m", "everywhere")
+                    setup = "driverless"
+                    try:
+                        checked("sudo", "lpadmin", "-p", name, "-E", "-v", uri,
+                                "-m", "everywhere")
+                    except RuntimeError:
+                        if platform.system() != "Darwin":
+                            raise
+                        # Some macOS runners ship a CUPS driverless backend
+                        # unable to generate a PPD for this partial IPP service.
+                        # Test the real OS spooler using the repository's
+                        # simulator-owned PDF-pass-through PPD as an explicit
+                        # compatibility fallback, not IPP Everywhere evidence.
+                        ppd = Path(__file__).resolve().parents[1] / "src" / (
+                            "lulwa_virtual_printer/ppd/" +
+                            ("zebra.ppd" if preset == "zebra" else "brother.ppd"))
+                        if not ppd.is_file():
+                            raise RuntimeError("Bundled macOS simulator PPD missing")
+                        checked("sudo", "lpadmin", "-p", name, "-E", "-v", uri,
+                                "-P", str(ppd))
+                        setup = "bundled_PPD_fallback"
                     checked("lpstat", "-v", name)
                     report = verify_print_roundtrip(preset, output, timeout=40)
                     assert report["result"] == "os_end_to_end_verified"
                     job_dir = next(output.glob(report["profile"] + "/*/job.json"))
                     metadata = json.loads(job_dir.read_text(encoding="utf-8"))
                     assert metadata["status"] == "rendered", metadata
-                    print("PASS:", preset, report, flush=True)
+                    print("PASS:", preset, "macOS_queue_setup="+setup, report, flush=True)
                 finally:
                     subprocess.run(["sudo", "lpadmin", "-x", name], check=False, timeout=15)
         except Exception:
