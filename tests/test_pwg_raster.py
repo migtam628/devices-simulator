@@ -20,7 +20,7 @@ from lulwa_virtual_printer.pwg_raster import decode_pwg_raster
 
 
 def pwg_page(width, height, channels, raster, *,
-             colorspace=None, bpp=None, stride=None, colors=None, order=0,
+             colorspace=None, bpc=8, bpp=None, stride=None, colors=None, order=0,
              header_string=b"PwgRaster"):
     page = bytearray(1796)
     page[:len(header_string)] = header_string
@@ -30,7 +30,7 @@ def pwg_page(width, height, channels, raster, *,
     integer(280, 300)
     integer(372, width)
     integer(376, height)
-    integer(384, 8)
+    integer(384, bpc)
     integer(388, bpp if bpp is not None else channels * 8)
     integer(392, stride if stride is not None else width * channels)
     integer(396, order)
@@ -55,6 +55,38 @@ def rgb_fixture():
     row1 = bytes([0, 255, 255, 0, 0, 0, 255, 0])
     row2 = bytes([0, 255, 0, 0, 255, 255, 255, 255])
     return b"RaS2" + pwg_page(2, 2, 3, row1 + row2)
+
+
+
+def mono_fixture():
+    """Packed 1-bit sGray with a padded 9th pixel and repeated scanline."""
+    # 9 pixels/row -> 2 bytes. First two rows white,black alternating,
+    # with the 9th pixel white (MSB of second byte). Third row is black.
+    runs = bytes([1, 255, 0xAA, 0x80, 0, 255, 0, 0])
+    return b"RaS2" + pwg_page(9, 3, 1, runs, bpc=1, bpp=1, stride=2)
+
+
+def test_packed_sgray_1_msb_bit_orientation_padding_and_repeated_rows():
+    images = decode_pwg_raster(mono_fixture())
+    assert len(images) == 1
+    image = images[0]
+    assert image.mode == "RGB" and image.size == (9, 3)
+    assert image.getpixel((0,0)) == (255,255,255)
+    assert image.getpixel((1,0)) == (0,0,0)
+    assert image.getpixel((8,0)) == (255,255,255)
+    assert image.getpixel((8,1)) == (255,255,255)
+    assert image.getpixel((0,2)) == (0,0,0)
+    assert image.getpixel((8,2)) == (0,0,0)
+
+
+def test_1bit_capture_keeps_original_and_jpg(tmp_path):
+    result = capture(mono_fixture(), "zebra", tmp_path, title="mono label QA")
+    assert result["status"] == "rendered"
+    folder = next(tmp_path.glob("zebra/*/job.json")).parent
+    assert (folder/"original.pwg").read_bytes() == mono_fixture()
+    with Image.open(folder/"page-001.jpg") as jpg:
+        assert jpg.size == (9,3)
+        assert jpg.convert("L").getpixel((1,1)) < 70
 
 
 def test_gray_packbits_pixel_and_row_repetition():
@@ -110,7 +142,11 @@ def test_in_app_capture_persists_source_all_page_jpg(tmp_path):
     (b"RaS2" + pwg_page(4, 3, 1, b"", colorspace=3), "color spaces"),
     (b"RaS2" + pwg_page(4, 3, 1, b"", order=2), "packing"),
     (b"RaS2" + pwg_page(4, 3, 1, b"", colors=3), "packing"),
-    (b"RaS2" + pwg_page(4, 3, 1, b"", bpp=1), "packing"),
+    (b"RaS2" + pwg_page(4, 3, 1, b"", bpp=1), "formats"),
+    (b"RaS2" + pwg_page(9, 3, 1, b"", bpc=1, bpp=1, stride=9), "packing"),
+    (b"RaS2" + pwg_page(9, 3, 1, b"", bpc=1, bpp=8, stride=9), "formats"),
+    (b"RaS2" + pwg_page(9, 3, 1, bytes([1,255,0xAA,0x80,2,0]), bpc=1, bpp=1, stride=2), "repeat exceeds"),
+    (b"RaS2" + pwg_page(9, 3, 1, bytes([0,253,0xAA,0x80,0x00]), bpc=1, bpp=1, stride=2), "run exceeds"),
     (b"RaS2" + pwg_page(4, 3, 1, b"", stride=2), "packing"),
     (gray_fixture() + b"trailing", "Truncated"),
     (b"2SaR" + gray_fixture()[4:], "RaS2"),
@@ -174,20 +210,24 @@ def ipp_request(port, printer, op, data=b"", fmt=None):
 
 
 @pytest.mark.parametrize("queue", ["zebra", "brother"])
-def test_real_ipp_pwg_print_job_to_jpg(server, queue):
+@pytest.mark.parametrize("fixture", [gray_fixture, mono_fixture])
+def test_real_ipp_pwg_print_job_to_jpg(server, queue, fixture):
     port, folder = server
     attrs = next(value for _, name, value in printer_attributes(queue, "ipp://here")
                  if name == "document-format-supported")
     assert "image/pwg-raster" in attrs
+    types = next(value for _, name, value in printer_attributes(queue, "ipp://here")
+                 if name == "pwg-raster-document-type-supported")
+    assert "sgray_1" in types
     raw, status=ipp_request(port, queue, 4, fmt="image/pwg-raster")
     assert raw[2:4] == b"\x00\x00"  # Validate-Job
-    raw, result=ipp_request(port, queue, 2, gray_fixture(), fmt="image/pwg-raster")
+    raw, result=ipp_request(port, queue, 2, fixture(), fmt="image/pwg-raster")
     assert raw[2:4] == b"\x00\x00"
     assert result.first("job-state") == 9
     profile = "zebra" if queue == "zebra" else "brother-tray1"
     file=next(folder.glob(profile+"/*/page-001.jpg"))
     assert file.stat().st_size>200
-    assert (file.parent/"original.pwg").read_bytes()==gray_fixture()
+    assert (file.parent/"original.pwg").read_bytes()==fixture()
     assert json.loads((file.parent/"job.json").read_text())["status"]=="rendered"
 
 

@@ -1,4 +1,4 @@
-"""Actual Linux CUPS -> simulator IPP -> JPG smoke test for GitHub Actions.
+"""Actual Linux/macOS CUPS -> simulator IPP -> JPG smoke test for CI.
 
 Invoked explicitly by the dedicated CI CUPS job (not ordinary pytest).
 No physical printers and no remote network endpoints are used.

@@ -159,7 +159,7 @@ def printer_attributes(key: str, uri: str):
         (INTEGER, 'queued-job-count', 0),
         (MIMETYPE, 'document-format-supported', supported_document_formats(key)),
         (MIMETYPE, 'document-format-default', 'application/pdf'),
-        (KEYWORD, 'pwg-raster-document-type-supported', ['sgray_8', 'srgb_8']),
+        (KEYWORD, 'pwg-raster-document-type-supported', ['sgray_1', 'sgray_8', 'srgb_8']),
         (KEYWORD, 'media-supported', media),
         (KEYWORD, 'media-ready', media),
         (KEYWORD, 'media-default', media),
