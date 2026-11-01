@@ -78,3 +78,17 @@ USB printer emulation. Linux CUPS end-to-end tests verify real queue
 submission separately. On Windows/macOS, use **Verify OS Print → JPG** on
 the machine and record the observed `document_format` in diagnostics.
 Only completed JPGs establish actual capture.
+
+## macOS CUPS regression gate (v0.16.1)
+
+GitHub Actions now executes the same **real CUPS-to-IPP-to-JPG** verification on
+`macos-15` (Apple Silicon) as on Linux. The test creates temporary simulator-only
+Brother and Zebra queues, attempting `lpadmin -m everywhere` first. On
+macOS only, if the OS cannot generate a driverless PPD, the test uses the
+project's documented PDF pass-through PPD with `lpadmin -P` and reports
+`bundled_PPD_fallback` in its result. It sends a unique sample
+through `lp`, and confirms matching JPG and metadata under the IPP output root.
+The test removes its temporary queues. CI results verify **macOS CUPS queue
+printing**, not physical devices, PrintNode, AirPrint discovery or other macOS
+release versions. Check the macOS CUPS job specifically rather than inferring
+success from the executable packaging smoke test alone.

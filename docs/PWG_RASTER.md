@@ -1,4 +1,4 @@
-# PWG Raster (RaS2) → JPG integration — v0.16.0
+# PWG Raster (RaS2) → JPG integration — v0.16.1
 
 Devices Simulator now accepts an explicitly constrained subset of the
 [PWG Raster Format (PWG 5102.4)](https://ftp.pwg.org/pub/pwg/candidates/cs-ippraster10-20120420-5102.4.pdf)
@@ -13,7 +13,7 @@ extension.
 | IPP MIME type | `image/pwg-raster` |
 | Signature | Big-endian `RaS2` (CUPS raster v2 / PWG raster family) |
 | Header | Exactly 1796 bytes per page, network-order integers |
-| Pixel formats | 8-bit sGray (colorspace 18), 24-bit sRGB (19) |
+| Pixel formats | 1-bit packed or 8-bit sGray (colorspace 18), 24-bit sRGB (19) |
 | Raster layout | Chunky color order 0 with exact per-row pixel stride |
 | Compression | PackBits-style repeated / literal pixel runs and repeated scanlines |
 | Multi-page | Up to 12 independent pages in one stream; one JPG per page |
@@ -24,10 +24,10 @@ extension.
 The IPP printer attributes advertise `document-format-supported` for
 PDF/PNG/JPEG and PWG raster (plus vendor ZPL for the simulated Zebra).
 The `pwg-raster-document-type-supported` values are limited to
-`sgray_8` and `srgb_8`. Clients can also use
+`sgray_1`, `sgray_8` and `srgb_8`. Clients can also use
 `application/octet-stream` if the `RaS2` magic is present.
 
-Unsupported `RaS3`, `2SaR`, 1-bit monochrome, CMYK, 16-bit,
+Unsupported `RaS3`, `2SaR`, CMYK, 16-bit,
 banded/planar, arbitrary CUPS-specific rasters and Apple URF are
 **rejected**, not silently reinterpreted. The parser checks row
 repetition boundaries, pixel runs, declared stride, total page
@@ -46,6 +46,8 @@ dimensions and memory before decoding or saving JPGs.
    `document_format`, IPP status and capture status.
 5. Open the local Gallery; verify a nonempty JPG and the preserved
    `original.pwg` under the selected printer profile.
+
+The automated suite `tests/test_pwg_raster.py` also checks byte-packed 1-bit pixels, including MSB-first bit polarity, 9-pixel padded rows and compressed scanline repetitions. A dedicated macOS Apple Silicon GitHub Actions job exercises a genuine CUPS OS queue → local IPP → saved JPG roundtrip alongside the Linux CUPS job. The macOS job first tries the driverless IPP Everywhere PPD; if its CUPS installation cannot generate one, it explicitly falls back to the repository's printer-specific PDF pass-through PPD and logs that distinction. No physical hardware is involved. **The fallback is evidence of native macOS CUPS queue printing, not of IPP Everywhere.**
 
 The automated suite `tests/test_pwg_raster.py` constructs independent
 PWG-formatted byte streams (gray, RGB, repeated rows and multi-page)
