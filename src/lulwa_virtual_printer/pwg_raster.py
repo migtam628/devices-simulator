@@ -1,6 +1,6 @@
 """Bounded subset of the PWG 5102.4 RaS2 raster format.
 
-Only 8-bit sGray (CUPS colorspace 18) and 24-bit sRGB (19), chunky order,
+1-bit packed and 8-bit sGray (CUPS colorspace 18), plus 24-bit sRGB (19), chunky order,
 are supported. Unsupported color orders, bpp, stream variants and malformed
 PackBits fail closed. This is not an IPP Everywhere certification.
 """
@@ -51,15 +51,24 @@ def decode_pwg_raster(data: bytes) -> list[Image.Image]:
             raise ValueError("PWG Raster page dimensions out of range")
         if width * height > MAX_PAGE_PIXELS:
             raise ValueError("PWG Raster page pixel limit exceeded")
-        if color_space == 18:
+        if color_space == 18 and bits_per_color == 1 and bits_per_pixel == 1:
+            # Packed MSB-first 1-bit grayscale. CUPS PackBits groups bytes,
+            # not individual pixels, for sub-8-bit color depths.
+            channels, mode = 1, "1"
+            pixel_bytes = 1
+            expected_stride = (width + 7) // 8
+        elif color_space == 18 and bits_per_color == 8 and bits_per_pixel == 8:
             channels, mode = 1, "L"
-        elif color_space == 19:
+            pixel_bytes = 1
+            expected_stride = width
+        elif color_space == 19 and bits_per_color == 8 and bits_per_pixel == 24:
             channels, mode = 3, "RGB"
+            pixel_bytes = 3
+            expected_stride = width * 3
         else:
-            raise ValueError("Only PWG sGray_8 and sRGB_8 color spaces are supported")
-        if (bits_per_color != 8 or bits_per_pixel != channels * 8
-                or colors != channels or color_order != 0
-                or bytes_per_line != width * channels):
+            raise ValueError("Only PWG sGray_1, sGray_8 and sRGB_8 formats are supported")
+        if (colors != channels or color_order != 0
+                or bytes_per_line != expected_stride):
             raise ValueError("Unsupported PWG Raster packing, sample depth or stride")
         page_size = bytes_per_line * height
         total_decoded += page_size
@@ -82,16 +91,16 @@ def decode_pwg_raster(data: bytes) -> list[Image.Image]:
                 pos += 1
                 if run < 128:
                     count = run + 1
-                    if count * channels > bytes_per_line - len(row):
+                    if count * pixel_bytes > bytes_per_line - len(row):
                         raise ValueError("PWG Raster pixel run exceeds row boundary")
-                    if len(data) - pos < channels:
+                    if len(data) - pos < pixel_bytes:
                         raise ValueError("Truncated PWG Raster repeated color")
-                    pixel = data[pos:pos + channels]
-                    pos += channels
+                    pixel = data[pos:pos + pixel_bytes]
+                    pos += pixel_bytes
                     row.extend(pixel * count)
                 elif run > 128:
                     count = 257 - run
-                    byte_count = count * channels
+                    byte_count = count * pixel_bytes
                     if byte_count > bytes_per_line - len(row):
                         raise ValueError("PWG Raster literal run exceeds row boundary")
                     if len(data) - pos < byte_count:
@@ -104,6 +113,8 @@ def decode_pwg_raster(data: bytes) -> list[Image.Image]:
                     raise ValueError("Unsupported PWG Raster PackBits control 0x80")
             page_bytes.extend(row * repetitions)
             rows += repetitions
+        # Packed 1-bit sGray is 0=black and 1=white in PWG Raster.
+        # Image mode "1" decodes the MSB-first bits of each scanline.
         pages.append(Image.frombytes(mode, (width, height), bytes(page_bytes)).convert("RGB"))
     if not pages:
         raise ValueError("PWG Raster contains no pages")
