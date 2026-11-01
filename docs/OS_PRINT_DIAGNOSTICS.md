@@ -92,3 +92,20 @@ The test removes its temporary queues. CI results verify **macOS CUPS queue
 printing**, not physical devices, PrintNode, AirPrint discovery or other macOS
 release versions. Check the macOS CUPS job specifically rather than inferring
 success from the executable packaging smoke test alone.
+
+## Application-managed macOS OS queue lifecycle (v0.16.2)
+
+The macOS-15 acceptance gate now invokes the **actual application functions**
+`native_printers.install_printer` and `uninstall_printer` for the Brother
+and Zebra simulator queues. A scoped CI-only elevated command runner supplies
+the required macOS CUPS permissions. The functions must verify each exact
+simulator-owned queue URI through `lpstat -v`, print a uniquely marked sample,
+observe the matching persisted JPG, and remove the verified queue. A printer
+with the same name but a different URI must never be overwritten or removed.
+
+This verifies the desktop Hub's underlying install/remove path on one hosted
+macOS Apple Silicon image. The routine first attempts `ipp_everywhere`, and
+when macOS cannot create the driverless PPD, uses its own bundled
+`legacy_pdf_ppd` fallback. The CI output records the chosen method.
+Physical devices, PrintNode Client, AirPrint discovery and other macOS/Windows
+OS versions require separate acceptance.
