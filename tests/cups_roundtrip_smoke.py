@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from lulwa_virtual_printer.ipp_server import start_server
-from lulwa_virtual_printer.native_printers import PRINTERS
+from lulwa_virtual_printer.native_printers import PRINTERS, install_printer, uninstall_printer
 from lulwa_virtual_printer.os_print_test import verify_print_roundtrip
 
 
@@ -25,6 +25,19 @@ def checked(*args):
     print(result.stdout, result.stderr, flush=True)
     if result.returncode:
         raise RuntimeError(f"Command failed with exit {result.returncode}: {args!r}")
+    return result
+
+
+def macos_privileged_runner(cmd):
+    """Route only the fixed app-owned CUPS printer commands through sudo.
+
+    get_registration is still the application's real read-only lpstat probe.
+    This runs exclusively in the isolated macOS GitHub CI runner.
+    """
+    argv = ["sudo", *cmd] if cmd and cmd[0] == "lpadmin" else cmd
+    print("+", " ".join(argv), flush=True)
+    result = subprocess.run(argv, text=True, capture_output=True, timeout=35)
+    print(result.stdout, result.stderr, flush=True)
     return result
 
 
@@ -38,26 +51,25 @@ def main():
             for preset in ("zebra", "brother"):
                 name, _, uri = PRINTERS[preset]
                 try:
-                    setup = "driverless"
-                    try:
-                        checked("sudo", "lpadmin", "-p", name, "-E", "-v", uri,
-                                "-m", "everywhere")
-                    except RuntimeError:
-                        if platform.system() != "Darwin":
-                            raise
-                        # Some macOS runners ship a CUPS driverless backend
-                        # unable to generate a PPD for this partial IPP service.
-                        # Test the real OS spooler using the repository's
-                        # simulator-owned PDF-pass-through PPD as an explicit
-                        # compatibility fallback, not IPP Everywhere evidence.
-                        ppd = Path(__file__).resolve().parents[1] / "src" / (
-                            "lulwa_virtual_printer/ppd/" +
-                            ("zebra.ppd" if preset == "zebra" else "brother.ppd"))
-                        if not ppd.is_file():
-                            raise RuntimeError("Bundled macOS simulator PPD missing")
-                        checked("sudo", "lpadmin", "-p", name, "-E", "-v", uri,
-                                "-P", str(ppd))
-                        setup = "bundled_PPD_fallback"
+                    if platform.system() == "Darwin":
+                        # Exercise the SAME installation routine used by the
+                        # desktop Hub's Install in OS action. It must verify
+                        # the exact local URI, and may choose its explicitly
+                        # documented PPD fallback if driverless fails.
+                        installed = install_printer(
+                            preset, system="Darwin",
+                            run=macos_privileged_runner,
+                            check_service=lambda: True,
+                        )
+                        print("MACOS APP INSTALL:", installed, flush=True)
+                        if not installed.get("success") or installed.get("status") != "registered":
+                            raise RuntimeError("Application OS printer install/verification failed")
+                        setup = installed.get("method")
+                        assert setup in ("ipp_everywhere", "legacy_pdf_ppd")
+                    else:
+                        checked("sudo", "lpadmin", "-p", name, "-E",
+                                "-v", uri, "-m", "everywhere")
+                        setup = "driverless"
                     checked("lpstat", "-v", name)
                     report = verify_print_roundtrip(preset, output, timeout=40)
                     assert report["result"] == "os_end_to_end_verified"
@@ -66,7 +78,17 @@ def main():
                     assert metadata["status"] == "rendered", metadata
                     print("PASS:", preset, "macOS_queue_setup="+setup, report, flush=True)
                 finally:
-                    subprocess.run(["sudo", "lpadmin", "-x", name], check=False, timeout=15)
+                    if platform.system() == "Darwin":
+                        # Verify the application refuses to delete non-owned
+                        # queues and only removes an exact verified endpoint.
+                        uninstalled = uninstall_printer(
+                            preset, system="Darwin", run=macos_privileged_runner)
+                        print("MACOS APP UNINSTALL:", uninstalled, flush=True)
+                        if not uninstalled.get("success"):
+                            raise RuntimeError("Application OS queue cleanup failed")
+                    else:
+                        subprocess.run(["sudo", "lpadmin", "-x", name],
+                                       check=False, timeout=15)
         except Exception:
             traceback.print_exc()
             try:
